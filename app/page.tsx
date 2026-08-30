@@ -308,7 +308,7 @@ export default function Home() {
             {gate === "initialConsent" && (
               <div className="simple-consent">
                 <span className="location-symbol">⌖</span>
-                <h2>发现城市黑料</h2>
+                <h2>帮你发现同城黑料秘密㊙️</h2>
                 <p>允许获取你的真实位置，为你推荐同城内容。</p>
                 <small className="simple-privacy">同意后会获取经纬度并解析为详细地址，仅保存在当前设备，可随时删除。</small>
                 {locationError && <div className="form-error">{locationError}</div>}
