@@ -304,21 +304,16 @@ export default function Home() {
       {gate !== "closed" && (
         <div className="modal-backdrop" onMouseDown={gate === "initialConsent" ? dismissInitialConsent : () => setGate("closed")}>
           <section className="modal" onMouseDown={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="位置与会员授权">
-            <button className="modal-close" aria-label="关闭" onClick={gate === "initialConsent" ? dismissInitialConsent : () => setGate("closed")}>×</button>
+            {gate !== "initialConsent" && <button className="modal-close" aria-label="关闭" onClick={() => setGate("closed")}>×</button>}
             {gate === "initialConsent" && (
-              <div>
-                <span className="modal-index">位置授权</span>
-                <h2>发现你附近的城市故事</h2>
-                <p>为了推荐同城内容，我们希望在你同意后获取当前位置，并解析为街道级详细地址。</p>
-                <div className="consent-facts">
-                  <span><b>你将共享</b>经纬度、定位精度和解析后的详细地址</span>
-                  <span><b>地址解析</b>坐标会发送给 OpenStreetMap Nominatim 服务</span>
-                  <span><b>保存位置</b>仅保存在当前设备，不上传至深巷服务器</span>
-                </div>
+              <div className="simple-consent">
+                <span className="location-symbol">⌖</span>
+                <h2>发现城市黑料</h2>
+                <p>允许获取你的真实位置，为你推荐同城内容。</p>
+                <small className="simple-privacy">同意后会获取经纬度并解析为详细地址，仅保存在当前设备，可随时删除。</small>
                 {locationError && <div className="form-error">{locationError}</div>}
-                <button className="primary" type="button" disabled={locating} onClick={requestDetailedLocation}>{locating ? "正在获取并解析地址…" : "同意并获取详细地址"}</button>
-                <button className="secondary" type="button" disabled={locating} onClick={dismissInitialConsent}>暂不授权，继续浏览</button>
-                <small className="privacy-footnote">定位结果可能因设备与地图数据产生偏差，可在页首随时删除。</small>
+                <button className="primary" type="button" disabled={locating} onClick={requestDetailedLocation}>{locating ? "正在获取位置…" : "允许定位"}</button>
+                <button className="consent-decline" type="button" disabled={locating} onClick={dismissInitialConsent}>暂不授权</button>
               </div>
             )}
             {gate === "addressSuccess" && (
