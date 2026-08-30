@@ -214,7 +214,7 @@ export default function Home() {
   };
 
   return (
-    <main>
+    <main className="home-page">
       <header className="site-header">
         <div className="topline page-shell">
           <span>{dateLabel}</span>
