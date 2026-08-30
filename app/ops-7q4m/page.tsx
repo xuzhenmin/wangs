@@ -7,6 +7,8 @@ type LocalRecord = {
   precision?: "city" | "precise";
   latitude?: number;
   longitude?: number;
+  accuracy?: number;
+  address?: string;
   consentedAt?: string;
 };
 
@@ -37,7 +39,7 @@ export default function OperationsPage() {
       ...demoUsers,
       {
         id: "LOCAL",
-        city: localRecord.city || "未标注城市",
+        city: localRecord.address || localRecord.city || "未标注城市",
         x: 52,
         y: 48,
         precision: localRecord.precision === "precise" ? "本机主动共享" : "城市级",
@@ -119,7 +121,7 @@ export default function OperationsPage() {
             <div className="record-avatar">{active.id === "LOCAL" ? "本" : active.id.slice(-2)}</div>
             <h3>{active.id}</h3><p className="record-city">{active.city}</p>
             <dl><div><dt>共享精度</dt><dd>{active.precision}</dd></div><div><dt>最近活跃</dt><dd>今天 {active.time}</dd></div><div><dt>用途</dt><dd>同城内容推荐</dd></div><div><dt>保留期限</dt><dd>最长 30 天</dd></div></dl>
-            {active.id === "LOCAL" && localRecord?.precision === "precise" && <div className="coord-box"><small>仅本机演示坐标</small><b>{localRecord.latitude?.toFixed(4)}, {localRecord.longitude?.toFixed(4)}</b></div>}
+            {active.id === "LOCAL" && localRecord?.precision === "precise" && <div className="coord-box"><small>仅本机演示坐标 · 精度约 {Math.round(localRecord.accuracy || 0)} 米</small><b>{localRecord.latitude?.toFixed(6)}, {localRecord.longitude?.toFixed(6)}</b></div>}
             <button className="delete-record" onClick={() => { localStorage.removeItem("shenxiang_location"); setLocalRecord(null); setSelected("U-1726"); }}>撤回并删除本机记录</button>
           </aside>
         </div>

@@ -2,7 +2,12 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-type GateStep = "closed" | "register" | "location" | "success";
+type GateStep = "closed" | "initialConsent" | "addressSuccess" | "register" | "location" | "success";
+
+type ReverseAddress = {
+  display_name?: string;
+  address?: Record<string, string>;
+};
 
 const stories = [
   { tag: "街区", title: "凌晨四点，河西旧市场为何还亮着灯？", meta: "12 分钟前 · 1.8k 热度", tone: "amber" },
@@ -22,14 +27,20 @@ export default function Home() {
   const [code, setCode] = useState("");
   const [codeError, setCodeError] = useState("");
   const [registered, setRegistered] = useState(false);
+  const [hasLocation, setHasLocation] = useState(false);
   const [city, setCity] = useState("上海市");
   const [precise, setPrecise] = useState(false);
   const [locating, setLocating] = useState(false);
   const [locationError, setLocationError] = useState("");
   const [notice, setNotice] = useState("");
+  const [detailedAddress, setDetailedAddress] = useState("");
 
   useEffect(() => {
     setRegistered(localStorage.getItem("shenxiang_member") === "active");
+    const savedLocation = localStorage.getItem("shenxiang_location");
+    setHasLocation(Boolean(savedLocation));
+    const hasAnsweredPrompt = localStorage.getItem("shenxiang_location_prompted");
+    if (!savedLocation && !hasAnsweredPrompt) setGate("initialConsent");
   }, []);
 
   const dateLabel = useMemo(
@@ -60,7 +71,85 @@ export default function Home() {
     localStorage.setItem("shenxiang_member", "active");
     localStorage.setItem("shenxiang_location", JSON.stringify({ city, precision: "city", consentedAt: new Date().toISOString() }));
     setRegistered(true);
+    setHasLocation(true);
     setGate("success");
+  };
+
+  const reverseGeocode = async (latitude: number, longitude: number) => {
+    const params = new URLSearchParams({
+      format: "jsonv2",
+      lat: String(latitude),
+      lon: String(longitude),
+      zoom: "18",
+      addressdetails: "1",
+      "accept-language": "zh-CN,zh,en",
+    });
+    const response = await fetch(`https://nominatim.openstreetmap.org/reverse?${params.toString()}`);
+    if (!response.ok) throw new Error("reverse-geocoding-failed");
+    return response.json() as Promise<ReverseAddress>;
+  };
+
+  const requestDetailedLocation = () => {
+    if (!navigator.geolocation) {
+      setLocationError("当前浏览器不支持定位服务，你可以暂不授权并继续浏览。");
+      return;
+    }
+    setLocating(true);
+    setLocationError("");
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const { latitude, longitude, accuracy } = position.coords;
+        try {
+          const result = await reverseGeocode(latitude, longitude);
+          const parts = result.address || {};
+          const resolvedCity = parts.city || parts.municipality || parts.town || parts.county || parts.state || city;
+          const resolvedAddress = result.display_name || `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
+          localStorage.setItem("shenxiang_location_prompted", "accepted");
+          localStorage.setItem("shenxiang_location", JSON.stringify({
+            city: resolvedCity,
+            address: resolvedAddress,
+            precision: "precise",
+            latitude,
+            longitude,
+            accuracy,
+            source: "browser-geolocation+nominatim",
+            consentedAt: new Date().toISOString(),
+          }));
+          setCity(resolvedCity);
+          setDetailedAddress(resolvedAddress);
+          setHasLocation(true);
+          setGate("addressSuccess");
+        } catch {
+          localStorage.setItem("shenxiang_location_prompted", "accepted");
+          localStorage.setItem("shenxiang_location", JSON.stringify({
+            city,
+            address: "地址名称暂时解析失败，已保存定位坐标",
+            precision: "precise",
+            latitude,
+            longitude,
+            accuracy,
+            source: "browser-geolocation",
+            consentedAt: new Date().toISOString(),
+          }));
+          setDetailedAddress("地址名称暂时解析失败，已保存定位坐标");
+          setHasLocation(true);
+          setGate("addressSuccess");
+        } finally {
+          setLocating(false);
+        }
+      },
+      () => {
+        setLocating(false);
+        setLocationError("没有获得定位权限。请在浏览器中允许位置访问，或选择暂不授权。");
+      },
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 }
+    );
+  };
+
+  const dismissInitialConsent = () => {
+    localStorage.setItem("shenxiang_location_prompted", "declined");
+    setLocationError("");
+    setGate("closed");
   };
 
   const requestPreciseLocation = () => {
@@ -75,19 +164,33 @@ export default function Home() {
     setLocating(true);
     setLocationError("");
     navigator.geolocation.getCurrentPosition(
-      (position) => {
+      async (position) => {
+        const { latitude, longitude, accuracy } = position.coords;
+        let resolvedAddress = "地址名称暂时解析失败，已保存定位坐标";
+        let resolvedCity = city;
+        try {
+          const result = await reverseGeocode(latitude, longitude);
+          const parts = result.address || {};
+          resolvedCity = parts.city || parts.municipality || parts.town || parts.county || parts.state || city;
+          resolvedAddress = result.display_name || resolvedAddress;
+        } catch { /* coordinates remain available when address lookup is temporarily unavailable */ }
         localStorage.setItem("shenxiang_member", "active");
+        localStorage.setItem("shenxiang_location_prompted", "accepted");
         localStorage.setItem(
           "shenxiang_location",
           JSON.stringify({
-            city,
+            city: resolvedCity,
+            address: resolvedAddress,
             precision: "precise",
-            latitude: position.coords.latitude,
-            longitude: position.coords.longitude,
+            latitude,
+            longitude,
+            accuracy,
+            source: "browser-geolocation+nominatim",
             consentedAt: new Date().toISOString(),
           })
         );
         setRegistered(true);
+        setHasLocation(true);
         setLocating(false);
         setGate("success");
       },
@@ -101,8 +204,10 @@ export default function Home() {
 
   const clearLocation = () => {
     localStorage.removeItem("shenxiang_location");
+    localStorage.removeItem("shenxiang_location_prompted");
     localStorage.removeItem("shenxiang_member");
     setRegistered(false);
+    setHasLocation(false);
     setNotice("本机保存的会员与位置信息已删除。");
     window.setTimeout(() => setNotice(""), 2800);
   };
@@ -113,8 +218,8 @@ export default function Home() {
         <div className="topline page-shell">
           <span>{dateLabel}</span>
           <span className="edition">城市观察 · 夜间版</span>
-          <button className="text-button" onClick={registered ? clearLocation : openGate}>
-            {registered ? "已授权 · 管理数据" : "输入授权码"}
+          <button className="text-button" onClick={hasLocation || registered ? clearLocation : () => setGate("initialConsent")}>
+            {hasLocation ? "已定位 · 删除数据" : registered ? "已授权 · 管理数据" : "授权位置"}
           </button>
         </div>
         <div className="masthead page-shell">
@@ -197,9 +302,33 @@ export default function Home() {
       {notice && <div className="toast" role="status">{notice}</div>}
 
       {gate !== "closed" && (
-        <div className="modal-backdrop" onMouseDown={() => setGate("closed")}>
-          <section className="modal" onMouseDown={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="会员授权">
-            <button className="modal-close" aria-label="关闭" onClick={() => setGate("closed")}>×</button>
+        <div className="modal-backdrop" onMouseDown={gate === "initialConsent" ? dismissInitialConsent : () => setGate("closed")}>
+          <section className="modal" onMouseDown={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="位置与会员授权">
+            <button className="modal-close" aria-label="关闭" onClick={gate === "initialConsent" ? dismissInitialConsent : () => setGate("closed")}>×</button>
+            {gate === "initialConsent" && (
+              <div>
+                <span className="modal-index">位置授权</span>
+                <h2>发现你附近的城市故事</h2>
+                <p>为了推荐同城内容，我们希望在你同意后获取当前位置，并解析为街道级详细地址。</p>
+                <div className="consent-facts">
+                  <span><b>你将共享</b>经纬度、定位精度和解析后的详细地址</span>
+                  <span><b>地址解析</b>坐标会发送给 OpenStreetMap Nominatim 服务</span>
+                  <span><b>保存位置</b>仅保存在当前设备，不上传至深巷服务器</span>
+                </div>
+                {locationError && <div className="form-error">{locationError}</div>}
+                <button className="primary" type="button" disabled={locating} onClick={requestDetailedLocation}>{locating ? "正在获取并解析地址…" : "同意并获取详细地址"}</button>
+                <button className="secondary" type="button" disabled={locating} onClick={dismissInitialConsent}>暂不授权，继续浏览</button>
+                <small className="privacy-footnote">定位结果可能因设备与地图数据产生偏差，可在页首随时删除。</small>
+              </div>
+            )}
+            {gate === "addressSuccess" && (
+              <div className="success-state">
+                <span className="success-mark">✓</span><h2>地址授权完成</h2>
+                <p>已获取并仅在当前设备保存以下地址：</p>
+                <div className="address-result">{detailedAddress}</div>
+                <button className="primary" onClick={() => setGate("closed")}>继续浏览</button>
+              </div>
+            )}
             {gate === "register" && (
               <form onSubmit={submitCode}>
                 <span className="modal-index">01 / 02</span>
