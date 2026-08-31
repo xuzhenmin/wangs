@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 
 type AdminLocation = {
   id: string;
@@ -39,10 +40,13 @@ export default function OperationsPage() {
   }, []);
 
   useEffect(() => {
-    loadLocations().catch(() => {
-      setChecking(false);
-      setError("后台数据暂时无法读取，请稍后重试。");
-    });
+    const timeoutId = window.setTimeout(() => {
+      loadLocations().catch(() => {
+        setChecking(false);
+        setError("后台数据暂时无法读取，请稍后重试。");
+      });
+    }, 0);
+    return () => window.clearTimeout(timeoutId);
   }, [loadLocations]);
 
   const active = locations.find((location) => location.id === selectedId) || locations[0] || null;
@@ -86,7 +90,7 @@ export default function OperationsPage() {
     return (
       <main className="ops-login">
         <div className="ops-login-card">
-          <a className="brand small" href="/">深<span>巷</span></a>
+          <Link className="brand small" href="/">深<span>巷</span></Link>
           <span className="ops-kicker">SUPER ADMIN ONLY</span>
           <h1>超级管理员登录</h1>
           <p>后台包含用户明确授权上传的详细地址与精确坐标，仅限超级管理员访问。</p>
@@ -103,7 +107,7 @@ export default function OperationsPage() {
   return (
     <main className="ops-shell">
       <aside className="ops-side">
-        <a className="brand small" href="/">深<span>巷</span></a>
+        <Link className="brand small" href="/">深<span>巷</span></Link>
         <div className="ops-nav"><button className="current"><i>⌖</i>精确位置</button><button><i>◫</i>授权记录</button><button><i>◎</i>城市统计</button></div>
         <div className="privacy-badge"><b>超级管理员会话</b><span>位置接口已启用服务端鉴权</span></div>
         <button className="ops-exit" onClick={logout}>安全退出</button>
