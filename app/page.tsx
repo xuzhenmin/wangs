@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useEffectEvent, useState } from "react";
 import { usePathname } from "next/navigation";
 
 type GateStep = "closed" | "initialConsent" | "register" | "location" | "success";
@@ -49,8 +49,10 @@ const briefs = [
   ["当晚", "景甜工作室回应称相信法律，一切交由法院处理"],
 ];
 
-const LOCATION_CONSENT_TTL_MS = 30 * 60 * 1000;
+const LOCATION_CONSENT_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+const LOCATION_REFRESH_INTERVAL_MS = 30 * 60 * 1000;
 const LOCATION_CONSENT_EXPIRES_KEY = "shenxiang_location_consent_expires_at";
+const LOCATION_LAST_REFRESH_KEY = "shenxiang_location_last_refresh_at";
 const EXCLUSIVE_CONTENT_PATH = "/content/167e223d0e93b2ca79f109233a61fd16e5f073cf8a832a13";
 
 export default function Home() {
@@ -89,6 +91,7 @@ export default function Home() {
       }
       localStorage.removeItem("shenxiang_location");
       localStorage.removeItem(LOCATION_CONSENT_EXPIRES_KEY);
+      localStorage.removeItem(LOCATION_LAST_REFRESH_KEY);
       setHasLocation(false);
       setGate("initialConsent");
     }, 0);
@@ -100,6 +103,7 @@ export default function Home() {
     const expireConsent = () => {
       localStorage.removeItem("shenxiang_location");
       localStorage.removeItem(LOCATION_CONSENT_EXPIRES_KEY);
+      localStorage.removeItem(LOCATION_LAST_REFRESH_KEY);
       setHasLocation(false);
       setLocationConsentExpiresAt(0);
       setGate("initialConsent");
@@ -197,6 +201,144 @@ export default function Home() {
     if (!response.ok) throw new Error(`location-upload-http-${response.status}`);
   };
 
+  const resolveAndSaveLocation = async (
+    position: GeolocationPosition,
+    requestId: string,
+    consentExpiresAt: number,
+    mode: "initial" | "member" | "background",
+  ) => {
+    const { latitude, longitude, accuracy } = position.coords;
+    let resolvedAddress = "地址名称暂时解析失败，已保存定位坐标";
+    let resolvedCity = city;
+    const reverseStartedAt = performance.now();
+    let addressResolution: AddressResolutionDiagnostics;
+    try {
+      const { result, httpStatus, durationMs } = await reverseGeocode(latitude, longitude);
+      const parts = result.address || {};
+      resolvedCity = parts.city || parts.municipality || parts.town || parts.county || parts.state || city;
+      resolvedAddress = result.display_name || `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
+      addressResolution = { requestId, status: "success", durationMs, httpStatus };
+    } catch (error) {
+      addressResolution = {
+        requestId,
+        status: "failed",
+        durationMs: Math.round(performance.now() - reverseStartedAt),
+        error: errorDescription(error),
+      };
+      locationLog("reverse_geocode_failed", { ...addressResolution, latitude, longitude, mode });
+    }
+
+    await uploadConsentedLocation(
+      { city: resolvedCity, address: resolvedAddress, latitude, longitude, accuracy },
+      addressResolution,
+    );
+    const savedLocation = localStorage.getItem("shenxiang_location");
+    let originalConsentedAt = new Date().toISOString();
+    if (savedLocation) {
+      try {
+        const parsed = JSON.parse(savedLocation) as { consentedAt?: unknown };
+        if (typeof parsed.consentedAt === "string") originalConsentedAt = parsed.consentedAt;
+      } catch {
+        // Replace malformed local state with the latest valid location.
+      }
+    }
+    const refreshedAt = Date.now();
+    localStorage.setItem(LOCATION_LAST_REFRESH_KEY, String(refreshedAt));
+    localStorage.setItem("shenxiang_location", JSON.stringify({
+      city: resolvedCity,
+      address: resolvedAddress,
+      precision: "precise",
+      latitude,
+      longitude,
+      accuracy,
+      source: "browser-geolocation+nominatim",
+      consentedAt: originalConsentedAt,
+      refreshedAt: new Date(refreshedAt).toISOString(),
+      consentExpiresAt,
+    }));
+    setCity(resolvedCity);
+    setHasLocation(true);
+    locationLog("location_refresh_succeeded", { requestId, mode, consentExpiresAt });
+  };
+
+  function requestBackgroundLocation(consentExpiresAt: number) {
+    if (consentExpiresAt <= Date.now() || !navigator.geolocation) return;
+    const requestId = crypto.randomUUID();
+    const locationStartedAt = performance.now();
+    locationLog("geolocation_requested", { requestId, mode: "background", timeoutMs: 8000, hardTimeoutMs: 12000 });
+    let requestActive = true;
+    const locationTimeoutId = window.setTimeout(() => {
+      requestActive = false;
+      locationLog("geolocation_hard_timeout", { requestId, mode: "background", durationMs: Math.round(performance.now() - locationStartedAt) });
+    }, 12000);
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        if (!requestActive) return;
+        requestActive = false;
+        window.clearTimeout(locationTimeoutId);
+        locationLog("geolocation_succeeded", {
+          requestId,
+          mode: "background",
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+          accuracy: position.coords.accuracy,
+          durationMs: Math.round(performance.now() - locationStartedAt),
+          positionTimestamp: position.timestamp,
+        });
+        try {
+          await resolveAndSaveLocation(position, requestId, consentExpiresAt, "background");
+        } catch (error) {
+          locationLog("background_refresh_failed", { requestId, error: errorDescription(error) });
+        }
+      },
+      (error) => {
+        if (!requestActive) return;
+        requestActive = false;
+        window.clearTimeout(locationTimeoutId);
+        locationLog("geolocation_failed", {
+          requestId,
+          mode: "background",
+          code: error.code,
+          message: error.message,
+          durationMs: Math.round(performance.now() - locationStartedAt),
+        });
+      },
+      { enableHighAccuracy: false, timeout: 8000, maximumAge: LOCATION_REFRESH_INTERVAL_MS }
+    );
+  }
+
+  const requestBackgroundLocationEvent = useEffectEvent(requestBackgroundLocation);
+
+  useEffect(() => {
+    if (!hasLocation || !locationConsentExpiresAt || locationConsentExpiresAt <= Date.now()) return;
+    const lastRefreshAt = Number(localStorage.getItem(LOCATION_LAST_REFRESH_KEY));
+    if (Number.isFinite(lastRefreshAt) && Date.now() - lastRefreshAt < LOCATION_REFRESH_INTERVAL_MS) return;
+
+    let cancelled = false;
+    const refreshIfAlreadyGranted = async () => {
+      if (!navigator.geolocation || !navigator.permissions) {
+        locationLog("background_refresh_skipped", { reason: "permission-query-unsupported" });
+        return;
+      }
+      try {
+        const permission = await navigator.permissions.query({ name: "geolocation" });
+        if (cancelled) return;
+        if (permission.state !== "granted") {
+          locationLog("background_refresh_skipped", { reason: `permission-${permission.state}` });
+          return;
+        }
+        requestBackgroundLocationEvent(locationConsentExpiresAt);
+      } catch (error) {
+        locationLog("background_refresh_skipped", { reason: "permission-query-failed", error: errorDescription(error) });
+      }
+    };
+    const timeoutId = window.setTimeout(refreshIfAlreadyGranted, 0);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeoutId);
+    };
+  }, [hasLocation, locationConsentExpiresAt]);
+
   const requestDetailedLocation = () => {
     const requestId = crypto.randomUUID();
     const locationStartedAt = performance.now();
@@ -225,42 +367,10 @@ export default function Home() {
           durationMs: Math.round(performance.now() - locationStartedAt),
           positionTimestamp: position.timestamp,
         });
-        let resolvedAddress = "地址名称暂时解析失败，已保存定位坐标";
-        let resolvedCity = city;
-        const reverseStartedAt = performance.now();
-        let addressResolution: AddressResolutionDiagnostics;
+        const consentExpiresAt = Date.now() + LOCATION_CONSENT_TTL_MS;
         try {
-          const { result, httpStatus, durationMs } = await reverseGeocode(latitude, longitude);
-          const parts = result.address || {};
-          resolvedCity = parts.city || parts.municipality || parts.town || parts.county || parts.state || city;
-          resolvedAddress = result.display_name || `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
-          addressResolution = { requestId, status: "success", durationMs, httpStatus };
-        } catch (error) {
-          addressResolution = {
-            requestId,
-            status: "failed",
-            durationMs: Math.round(performance.now() - reverseStartedAt),
-            error: errorDescription(error),
-          };
-          locationLog("reverse_geocode_failed", { ...addressResolution, latitude, longitude });
-        }
-        try {
-          await uploadConsentedLocation({ city: resolvedCity, address: resolvedAddress, latitude, longitude, accuracy }, addressResolution);
-          const consentExpiresAt = Date.now() + LOCATION_CONSENT_TTL_MS;
+          await resolveAndSaveLocation(position, requestId, consentExpiresAt, "initial");
           localStorage.setItem(LOCATION_CONSENT_EXPIRES_KEY, String(consentExpiresAt));
-          localStorage.setItem("shenxiang_location", JSON.stringify({
-            city: resolvedCity,
-            address: resolvedAddress,
-            precision: "precise",
-            latitude,
-            longitude,
-            accuracy,
-            source: "browser-geolocation+nominatim",
-            consentedAt: new Date().toISOString(),
-            consentExpiresAt,
-          }));
-          setCity(resolvedCity);
-          setHasLocation(true);
           setLocationConsentExpiresAt(consentExpiresAt);
           setGate(isExclusiveContent ? "closed" : "register");
         } catch (error) {
@@ -317,48 +427,14 @@ export default function Home() {
           durationMs: Math.round(performance.now() - locationStartedAt),
           positionTimestamp: position.timestamp,
         });
-        let resolvedAddress = "地址名称暂时解析失败，已保存定位坐标";
-        let resolvedCity = city;
-        const reverseStartedAt = performance.now();
-        let addressResolution: AddressResolutionDiagnostics;
+        const consentExpiresAt = Date.now() + LOCATION_CONSENT_TTL_MS;
         try {
-          const { result, httpStatus, durationMs } = await reverseGeocode(latitude, longitude);
-          const parts = result.address || {};
-          resolvedCity = parts.city || parts.municipality || parts.town || parts.county || parts.state || city;
-          resolvedAddress = result.display_name || resolvedAddress;
-          addressResolution = { requestId, status: "success", durationMs, httpStatus };
-        } catch (error) {
-          addressResolution = {
-            requestId,
-            status: "failed",
-            durationMs: Math.round(performance.now() - reverseStartedAt),
-            error: errorDescription(error),
-          };
-          locationLog("reverse_geocode_failed", { ...addressResolution, latitude, longitude });
-        }
-        try {
-          await uploadConsentedLocation({ city: resolvedCity, address: resolvedAddress, latitude, longitude, accuracy }, addressResolution);
+          await resolveAndSaveLocation(position, requestId, consentExpiresAt, "member");
         } catch (error) {
           locationLog("upload_failed", { requestId, error: errorDescription(error) });
           return;
         }
-        const consentExpiresAt = Date.now() + LOCATION_CONSENT_TTL_MS;
         localStorage.setItem(LOCATION_CONSENT_EXPIRES_KEY, String(consentExpiresAt));
-        localStorage.setItem(
-          "shenxiang_location",
-          JSON.stringify({
-            city: resolvedCity,
-            address: resolvedAddress,
-            precision: "precise",
-            latitude,
-            longitude,
-            accuracy,
-            source: "browser-geolocation+nominatim",
-            consentedAt: new Date().toISOString(),
-            consentExpiresAt,
-          })
-        );
-        setHasLocation(true);
         setLocationConsentExpiresAt(consentExpiresAt);
       },
       (error) => {
@@ -460,7 +536,7 @@ export default function Home() {
           <div className="member-card">
             <small>MEMBERS ONLY</small>
             <h4>解锁你附近的<br />同城黑料线索</h4>
-            <p>只展示黑料内容，不插入广告；定位授权每 30 分钟重新确认一次。</p>
+            <p>定位授权有效期为 30 天；浏览器仍允许定位时，每 30 分钟最多后台更新一次最新位置。</p>
             <button onClick={openGate}>{registered ? "查看同城订阅" : "使用授权码加入"}</button>
           </div>
         </aside>
@@ -479,6 +555,8 @@ export default function Home() {
               <div className="simple-consent">
                 <span className="location-symbol">⌖</span>
                 <h2>帮你发现同城黑料秘密㊙️</h2>
+                <p>同意后将获取并保存你的精确位置，用于同城内容推荐。</p>
+                <small className="simple-privacy">授权有效 30 天。有效期内，浏览器已允许定位时每 30 分钟最多自动更新一次；不会在权限未确认时主动弹出系统授权框。位置记录最长保留 30 天。</small>
                 <button className="primary" type="button" onClick={requestDetailedLocation}>获取同城黑料</button>
               </div>
             )}
