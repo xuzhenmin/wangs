@@ -24,6 +24,9 @@ next-env.d.ts
 # Local runtime files and generated scrape results
 .local-site.pid
 .local-site.log
+data/*.sqlite
+data/*.sqlite-shm
+data/*.sqlite-wal
 scraped-pages/
 
 # Test output and tool caches
