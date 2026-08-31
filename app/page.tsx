@@ -141,6 +141,12 @@ export default function Home() {
     setGate("register");
   };
 
+  const closeGate = () => {
+    if (gate === "initialConsent") return;
+    setCodeError("");
+    setGate("closed");
+  };
+
   const submitCode = (event: React.FormEvent) => {
     event.preventDefault();
     if (code.trim().toUpperCase() !== "CITY-0830") {
@@ -554,8 +560,9 @@ export default function Home() {
       {notice && <div className="toast" role="status">{notice}</div>}
 
       {gate !== "closed" && (
-        <div className="modal-backdrop">
-          <section className="modal" onMouseDown={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="位置与会员授权">
+        <div className="modal-backdrop" onClick={closeGate}>
+          <section className="modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="位置与会员授权">
+            {gate !== "initialConsent" && <button className="modal-close" type="button" onClick={closeGate} aria-label="关闭弹窗">×</button>}
             {gate === "initialConsent" && (
               <div className="simple-consent">
                 <span className="location-symbol">⌖</span>
