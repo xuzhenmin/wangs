@@ -17,7 +17,16 @@ fi
 SITE_URL="http://$SITE_URL_HOST:$SITE_PORT"
 
 find_listener_pid() {
-  lsof -nP -iTCP:"$SITE_PORT" -sTCP:LISTEN -t 2>/dev/null | head -n 1 || true
+  if command -v lsof >/dev/null 2>&1; then
+    lsof -nP -iTCP:"$SITE_PORT" -sTCP:LISTEN -t 2>/dev/null | head -n 1 || true
+    return
+  fi
+  if command -v ss >/dev/null 2>&1; then
+    ss -ltnp 2>/dev/null \
+      | awk -v port=":$SITE_PORT" '$4 ~ port "$"' \
+      | sed -n 's/.*pid=\([0-9][0-9]*\).*/\1/p' \
+      | head -n 1 || true
+  fi
 }
 
 if [[ "$(uname -s)" == "Darwin" ]] && \
@@ -48,7 +57,12 @@ fi
 LISTENER_PID="$(find_listener_pid)"
 if [[ -n "$LISTENER_PID" ]]; then
   LISTENER_COMMAND="$(ps -p "$LISTENER_PID" -o command= 2>/dev/null || true)"
-  if [[ "$LISTENER_COMMAND" == *"$PROJECT_DIR"* && "$LISTENER_COMMAND" == *"vinext dev"* ]]; then
+  if [[ -e "/proc/$LISTENER_PID/cwd" ]]; then
+    LISTENER_CWD="$(readlink -f "/proc/$LISTENER_PID/cwd" 2>/dev/null || true)"
+  else
+    LISTENER_CWD="$(lsof -a -p "$LISTENER_PID" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p' | head -n 1)"
+  fi
+  if [[ "$LISTENER_CWD" == "$PROJECT_DIR" && "$LISTENER_COMMAND" == *"next"* ]]; then
     echo "状态：运行中（进程号 $LISTENER_PID）"
     echo "地址：$SITE_URL"
     echo "提示：进程记录缺失，再次运行启动命令可自动恢复。"
