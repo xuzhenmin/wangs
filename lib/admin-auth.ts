@@ -1,13 +1,8 @@
-import { env } from "cloudflare:workers";
-
 const encoder = new TextEncoder();
 const SESSION_COOKIE = "shenxiang_admin_session";
 const SESSION_LIFETIME_MS = 8 * 60 * 60 * 1000;
 
 function getRuntimeSecret(name: "ADMIN_PASSWORD" | "ADMIN_SESSION_SECRET") {
-  const workerEnv = env as unknown as Record<string, unknown>;
-  const workerValue = workerEnv[name];
-  if (typeof workerValue === "string" && workerValue) return workerValue;
   const processValue = process.env[name];
   if (processValue) return processValue;
   throw new Error(`${name} is not configured`);
