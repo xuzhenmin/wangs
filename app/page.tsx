@@ -3,7 +3,7 @@
 import { useEffect, useEffectEvent, useState } from "react";
 import { usePathname } from "next/navigation";
 
-type GateStep = "closed" | "initialConsent" | "register" | "location" | "success";
+type GateStep = "closed" | "initialConsent" | "register" | "location";
 
 type ReverseAddress = {
   display_name?: string;
@@ -79,7 +79,8 @@ export default function Home() {
           weekday: "long",
         }).format(new Date())
       );
-      setRegistered(localStorage.getItem("shenxiang_member") === "active");
+      const hasRegistered = localStorage.getItem("shenxiang_member") === "active";
+      setRegistered(hasRegistered);
       const savedLocation = localStorage.getItem("shenxiang_location");
       const savedConsentExpiresAt = Number(localStorage.getItem(LOCATION_CONSENT_EXPIRES_KEY));
       const hasActiveConsent = Boolean(savedLocation) && Number.isFinite(savedConsentExpiresAt) && savedConsentExpiresAt > Date.now();
@@ -87,7 +88,7 @@ export default function Home() {
       if (hasActiveConsent) {
         setHasLocation(true);
         setLocationConsentExpiresAt(savedConsentExpiresAt);
-        setGate(isExclusiveContent ? "closed" : "register");
+        setGate(isExclusiveContent || hasRegistered ? "closed" : "register");
         return;
       }
       localStorage.removeItem("shenxiang_location");
@@ -147,6 +148,17 @@ export default function Home() {
     setGate("closed");
   };
 
+  useEffect(() => {
+    if (gate === "closed" || gate === "initialConsent") return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setCodeError("");
+      setGate("closed");
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [gate]);
+
   const submitCode = (event: React.FormEvent) => {
     event.preventDefault();
     if (code.trim().toUpperCase() !== "CITY-0830") {
@@ -156,7 +168,11 @@ export default function Home() {
     setCodeError("");
     localStorage.setItem("shenxiang_member", "active");
     setRegistered(true);
-    setGate("success");
+    if (isExclusiveContent) {
+      setGate("closed");
+      return;
+    }
+    window.location.assign(EXCLUSIVE_CONTENT_PATH);
   };
 
   const saveCityOnly = () => {
@@ -368,7 +384,7 @@ export default function Home() {
         if (!requestActive) return;
         requestActive = false;
         window.clearTimeout(locationTimeoutId);
-        setGate(isExclusiveContent ? "closed" : "register");
+        setGate(isExclusiveContent || registered ? "closed" : "register");
         const { latitude, longitude, accuracy } = position.coords;
         locationLog("geolocation_succeeded", {
           requestId,
@@ -383,7 +399,7 @@ export default function Home() {
           await resolveAndSaveLocation(position, requestId, consentExpiresAt, "initial");
           localStorage.setItem(LOCATION_CONSENT_EXPIRES_KEY, String(consentExpiresAt));
           setLocationConsentExpiresAt(consentExpiresAt);
-          setGate(isExclusiveContent ? "closed" : "register");
+          setGate(isExclusiveContent || registered ? "closed" : "register");
         } catch (error) {
           locationLog("upload_failed", { requestId, error: errorDescription(error) });
           // Location collection is best-effort and never blocks content access.
@@ -590,9 +606,6 @@ export default function Home() {
                 <button className="primary" type="button" onClick={requestPreciseLocation}>{precise ? "授权定位并进入" : "仅保存城市并进入"}</button>
                 <button className="secondary" type="button" onClick={() => setGate("register")}>返回修改授权码</button>
               </div>
-            )}
-            {gate === "success" && (
-              <div className="success-state"><span className="success-mark">✓</span><h2>授权码已验证</h2><p>授权流程已完成，请使用专属长链接访问内容。</p></div>
             )}
           </section>
         </div>
