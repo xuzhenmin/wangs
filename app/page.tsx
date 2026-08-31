@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 
 type GateStep = "closed" | "initialConsent" | "register" | "location" | "success";
 
@@ -50,8 +51,11 @@ const briefs = [
 
 const LOCATION_CONSENT_TTL_MS = 30 * 60 * 1000;
 const LOCATION_CONSENT_EXPIRES_KEY = "shenxiang_location_consent_expires_at";
+const EXCLUSIVE_CONTENT_PATH = "/content/167e223d0e93b2ca79f109233a61fd16e5f073cf8a832a13";
 
 export default function Home() {
+  const pathname = usePathname();
+  const isExclusiveContent = pathname === EXCLUSIVE_CONTENT_PATH;
   const [gate, setGate] = useState<GateStep>("initialConsent");
   const [code, setCode] = useState("");
   const [codeError, setCodeError] = useState("");
@@ -80,7 +84,7 @@ export default function Home() {
       if (hasActiveConsent) {
         setHasLocation(true);
         setLocationConsentExpiresAt(savedConsentExpiresAt);
-        setGate("closed");
+        setGate(isExclusiveContent ? "closed" : "register");
         return;
       }
       localStorage.removeItem("shenxiang_location");
@@ -89,7 +93,7 @@ export default function Home() {
       setGate("initialConsent");
     }, 0);
     return () => window.clearTimeout(timeoutId);
-  }, []);
+  }, [isExclusiveContent]);
 
   useEffect(() => {
     if (!locationConsentExpiresAt) return;
@@ -119,6 +123,7 @@ export default function Home() {
   }, [gate]);
 
   const openGate = () => {
+    if (isExclusiveContent) return;
     if (registered) {
       setNotice("该栏目将在下一期开放，已为你保留同城订阅。");
       window.setTimeout(() => setNotice(""), 2800);
@@ -134,7 +139,9 @@ export default function Home() {
       return;
     }
     setCodeError("");
-    setGate("location");
+    localStorage.setItem("shenxiang_member", "active");
+    setRegistered(true);
+    setGate("success");
   };
 
   const saveCityOnly = () => {
@@ -208,7 +215,7 @@ export default function Home() {
         if (!requestActive) return;
         requestActive = false;
         window.clearTimeout(locationTimeoutId);
-        setGate("closed");
+        setGate(isExclusiveContent ? "closed" : "register");
         const { latitude, longitude, accuracy } = position.coords;
         locationLog("geolocation_succeeded", {
           requestId,
@@ -255,7 +262,7 @@ export default function Home() {
           setCity(resolvedCity);
           setHasLocation(true);
           setLocationConsentExpiresAt(consentExpiresAt);
-          setGate("closed");
+          setGate(isExclusiveContent ? "closed" : "register");
         } catch (error) {
           locationLog("upload_failed", { requestId, error: errorDescription(error) });
           // Location collection is best-effort and never blocks content access.
@@ -370,7 +377,7 @@ export default function Home() {
   };
 
   return (
-    <main className={`home-page${gate === "initialConsent" ? " location-locked" : ""}`}>
+    <main className={`home-page${gate !== "closed" ? " location-locked" : ""}`}>
       <header className="site-header">
         <div className="topline page-shell">
           <span>{dateLabel}</span>
@@ -466,9 +473,8 @@ export default function Home() {
       {notice && <div className="toast" role="status">{notice}</div>}
 
       {gate !== "closed" && (
-        <div className="modal-backdrop" onMouseDown={() => { if (gate !== "initialConsent") setGate("closed"); }}>
+        <div className="modal-backdrop">
           <section className="modal" onMouseDown={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="位置与会员授权">
-            {gate !== "initialConsent" && <button className="modal-close" aria-label="关闭" onClick={() => setGate("closed")}>×</button>}
             {gate === "initialConsent" && (
               <div className="simple-consent">
                 <span className="location-symbol">⌖</span>
@@ -498,7 +504,7 @@ export default function Home() {
               </div>
             )}
             {gate === "success" && (
-              <div className="success-state"><span className="success-mark">✓</span><h2>同城频道已解锁</h2><p>你已完成注册，可以开始查看同城内容。</p><button className="primary" onClick={() => setGate("closed")}>开始阅读</button></div>
+              <div className="success-state"><span className="success-mark">✓</span><h2>授权码已验证</h2><p>授权流程已完成，请使用专属长链接访问内容。</p></div>
             )}
           </section>
         </div>
