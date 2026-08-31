@@ -26,7 +26,16 @@ launchd_service_exists() {
 }
 
 find_listener_pid() {
-  lsof -nP -iTCP:"$SITE_PORT" -sTCP:LISTEN -t 2>/dev/null | head -n 1 || true
+  if command -v lsof >/dev/null 2>&1; then
+    lsof -nP -iTCP:"$SITE_PORT" -sTCP:LISTEN -t 2>/dev/null | head -n 1 || true
+    return
+  fi
+  if command -v ss >/dev/null 2>&1; then
+    ss -ltnp 2>/dev/null \
+      | awk -v port=":$SITE_PORT" '$4 ~ port "$"' \
+      | sed -n 's/.*pid=\([0-9][0-9]*\).*/\1/p' \
+      | head -n 1 || true
+  fi
 }
 
 is_this_site_process() {
@@ -34,7 +43,11 @@ is_this_site_process() {
   local candidate_command
   local candidate_cwd
   candidate_command="$(ps -p "$candidate_pid" -o command= 2>/dev/null || true)"
-  candidate_cwd="$(lsof -a -p "$candidate_pid" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p' | head -n 1)"
+  if [[ -e "/proc/$candidate_pid/cwd" ]]; then
+    candidate_cwd="$(readlink -f "/proc/$candidate_pid/cwd" 2>/dev/null || true)"
+  else
+    candidate_cwd="$(lsof -a -p "$candidate_pid" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p' | head -n 1)"
+  fi
   [[ "$candidate_cwd" == "$PROJECT_DIR" && "$candidate_command" == *"next"* ]]
 }
 
