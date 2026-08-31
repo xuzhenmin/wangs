@@ -1,8 +1,8 @@
-# vinext-starter
+# 深巷网站
 
-A clean full-stack starter running on
-[vinext](https://github.com/cloudflare/vinext), with optional Cloudflare D1 and
-Drizzle support.
+基于 Next.js 的 Node.js 网站，使用本地 SQLite 保存用户明确授权的位置记录。
+运行时不依赖 Cloudflare Workers、Wrangler、Miniflare 或 Docker，可在 glibc
+2.32 的 Linux 服务器上运行。
 
 ## Prerequisites
 
@@ -16,16 +16,23 @@ npm run dev
 npm run build
 ```
 
-This starter does not use `wrangler.jsonc`.
+生产环境需要配置管理员密码和会话签名密钥：
 
-## Included Shape
+```bash
+cp .env.example .env
+# 编辑 .env 后启动
+LOCAL_SITE_HOST=0.0.0.0 npm run local:start
+```
 
-- edit site code under `app/`
-- `.openai/hosting.json` declares optional Sites D1 and R2 bindings
-- `vite.config.ts` simulates declared bindings for local development
-- `db/schema.ts` starts intentionally empty
-- `examples/d1/` contains an optional D1 example surface
-- `drizzle.config.ts` supports local migration generation when needed
+默认端口为 `3217`。位置数据默认写入 `data/wangs.sqlite`。
+
+## Runtime configuration
+
+- `ADMIN_PASSWORD`: 后台登录密码，必须设置
+- `ADMIN_SESSION_SECRET`: 会话签名密钥，必须设置为足够长的随机值
+- `LOCATION_DB_PATH`: SQLite 文件路径，默认 `data/wangs.sqlite`
+- `LOCAL_SITE_HOST`: 监听地址，默认 `127.0.0.1`；公网服务器可设置为 `0.0.0.0`
+- `LOCAL_SITE_PORT`: 监听端口，默认 `3217`
 
 ## Workspace Auth Headers
 
@@ -87,9 +94,9 @@ actions tied to the current ChatGPT user. Leave public content anonymous.
 
 ## Useful Commands
 
-- `npm run dev`: start local development
-- `npm run build`: verify the vinext build output
-- `npm run local:start`: start the Cloudflare-compatible local site in the background at `http://127.0.0.1:3217`
+- `npm run dev`: 启动 Next.js 开发服务器
+- `npm run build`: 构建 Next.js 生产版本
+- `npm run local:start`: 构建并在后台启动 Node.js 服务，默认地址 `http://127.0.0.1:3217`
 - `npm run local:pause`: safely pause the background site process
 - `npm run local:status`: show whether the local site is running
 - `npm run scrape -- https://example.com/article`: save one authorized page as cleaned text and JSON
@@ -108,7 +115,5 @@ a URL for an interactive prompt. Results are written to `scraped-pages/` by defa
 use `--output PATH` to choose another folder. Private or local development URLs are
 blocked unless you explicitly add `--allow-private` for a host you control.
 
-## Learn More
-
-- [vinext Documentation](https://github.com/cloudflare/vinext)
-- [Drizzle D1 Guide](https://orm.drizzle.team/docs/get-started/d1-new)
+服务器直接对外提供服务时，还需要在安全组中开放对应端口。浏览器定位功能要求
+HTTPS，正式环境建议在服务前配置 Nginx 和 TLS 证书。
