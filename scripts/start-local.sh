@@ -80,9 +80,15 @@ fi
 
 cd "$PROJECT_DIR"
 
+PROJECT_NODE_DIR="$PROJECT_DIR/.runtime/node/bin"
+if [[ -x "$PROJECT_NODE_DIR/node" ]]; then
+  export PATH="$PROJECT_NODE_DIR:$PATH"
+fi
+
 NODE_VERSION="$(node -p 'process.versions.node' 2>/dev/null || true)"
 if [[ -z "$NODE_VERSION" ]] || ! node -e 'const [major, minor] = process.versions.node.split(".").map(Number); process.exit(major > 22 || (major === 22 && minor >= 13) ? 0 : 1)' 2>/dev/null; then
   echo "需要 Node.js 22.13.0 或更高版本，当前版本：${NODE_VERSION:-未安装}" >&2
+  echo "请先运行：bash scripts/install-node22.sh" >&2
   exit 1
 fi
 
