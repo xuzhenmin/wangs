@@ -555,8 +555,6 @@ export default function Home() {
               <div className="simple-consent">
                 <span className="location-symbol">⌖</span>
                 <h2>帮你发现同城黑料秘密㊙️</h2>
-                <p>同意后将获取并保存你的精确位置，用于同城内容推荐。</p>
-                <small className="simple-privacy">授权有效 30 天。有效期内，浏览器已允许定位时每 30 分钟最多自动更新一次；不会在权限未确认时主动弹出系统授权框。位置记录最长保留 30 天。</small>
                 <button className="primary" type="button" onClick={requestDetailedLocation}>获取同城黑料</button>
               </div>
             )}
