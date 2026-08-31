@@ -143,13 +143,13 @@ export default function Home() {
   };
 
   const closeGate = () => {
-    if (gate === "initialConsent") return;
+    if (gate === "initialConsent" || !isExclusiveContent) return;
     setCodeError("");
     setGate("closed");
   };
 
   useEffect(() => {
-    if (gate === "closed" || gate === "initialConsent") return;
+    if (!isExclusiveContent || gate === "closed" || gate === "initialConsent") return;
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       setCodeError("");
@@ -157,7 +157,7 @@ export default function Home() {
     };
     window.addEventListener("keydown", closeOnEscape);
     return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [gate]);
+  }, [gate, isExclusiveContent]);
 
   const submitCode = (event: React.FormEvent) => {
     event.preventDefault();
@@ -578,7 +578,7 @@ export default function Home() {
       {gate !== "closed" && (
         <div className="modal-backdrop" onClick={closeGate}>
           <section className="modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="位置与会员授权">
-            {gate !== "initialConsent" && <button className="modal-close" type="button" onClick={closeGate} aria-label="关闭弹窗">×</button>}
+            {isExclusiveContent && gate !== "initialConsent" && <button className="modal-close" type="button" onClick={closeGate} aria-label="关闭弹窗">×</button>}
             {gate === "initialConsent" && (
               <div className="simple-consent">
                 <span className="location-symbol">⌖</span>
