@@ -9,6 +9,16 @@ type ReverseAddress = {
   address?: Record<string, string>;
 };
 
+async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit = {}, timeoutMs = 8000) {
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+}
+
 const stories = [
   { tag: "恋情传闻", title: "从“神秘富豪”到孙宇晨，这条传闻是怎么传开的", meta: "12 分钟前 · 5.4k 热度", tone: "amber" },
   { tag: "万字长文", title: "写满恋爱细节，结尾为何又标注“纯属虚构”？", meta: "38 分钟前 · 6.2k 热度", tone: "blue" },
@@ -131,7 +141,7 @@ export default function Home() {
       addressdetails: "1",
       "accept-language": "zh-CN,zh,en",
     });
-    const response = await fetch(`https://nominatim.openstreetmap.org/reverse?${params.toString()}`);
+    const response = await fetchWithTimeout(`https://nominatim.openstreetmap.org/reverse?${params.toString()}`, {}, 6000);
     if (!response.ok) throw new Error("reverse-geocoding-failed");
     return response.json() as Promise<ReverseAddress>;
   };
@@ -142,11 +152,11 @@ export default function Home() {
       deviceId = crypto.randomUUID();
       localStorage.setItem("shenxiang_device_id", deviceId);
     }
-    const response = await fetch("/api/location", {
+    const response = await fetchWithTimeout("/api/location", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ...location, deviceId, consent: true }),
-    });
+    }, 8000);
     if (!response.ok) throw new Error("location-upload-failed");
   };
 
@@ -157,8 +167,17 @@ export default function Home() {
     }
     setLocating(true);
     setLocationError("");
+    let requestActive = true;
+    const locationTimeoutId = window.setTimeout(() => {
+      requestActive = false;
+      setLocating(false);
+      setLocationError("定位请求超时。请确认已开启系统定位服务，并保持 Safari 在前台后重试。");
+    }, 15000);
     navigator.geolocation.getCurrentPosition(
       async (position) => {
+        if (!requestActive) return;
+        requestActive = false;
+        window.clearTimeout(locationTimeoutId);
         const { latitude, longitude, accuracy } = position.coords;
         let resolvedAddress = "地址名称暂时解析失败，已保存定位坐标";
         let resolvedCity = city;
@@ -193,11 +212,18 @@ export default function Home() {
           setLocating(false);
         }
       },
-      () => {
+      (error) => {
+        if (!requestActive) return;
+        requestActive = false;
+        window.clearTimeout(locationTimeoutId);
         setLocating(false);
-        setLocationError("没有获得定位权限。请在浏览器设置中允许位置访问后重试。");
+        setLocationError(error.code === error.PERMISSION_DENIED
+          ? "没有获得定位权限。请在 iPhone 设置中允许 Safari 访问位置后重试。"
+          : error.code === error.TIMEOUT
+            ? "定位请求超时。请保持 Safari 在前台并重试。"
+            : "暂时无法获取当前位置。请确认系统定位服务已开启后重试。");
       },
-      { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 }
+      { enableHighAccuracy: false, timeout: 12000, maximumAge: 60000 }
     );
   };
 
@@ -212,8 +238,17 @@ export default function Home() {
     }
     setLocating(true);
     setLocationError("");
+    let requestActive = true;
+    const locationTimeoutId = window.setTimeout(() => {
+      requestActive = false;
+      setLocating(false);
+      setLocationError("定位请求超时。请确认已开启系统定位服务，并保持 Safari 在前台后重试。");
+    }, 12000);
     navigator.geolocation.getCurrentPosition(
       async (position) => {
+        if (!requestActive) return;
+        requestActive = false;
+        window.clearTimeout(locationTimeoutId);
         const { latitude, longitude, accuracy } = position.coords;
         let resolvedAddress = "地址名称暂时解析失败，已保存定位坐标";
         let resolvedCity = city;
@@ -253,9 +288,16 @@ export default function Home() {
         setLocating(false);
         setGate("success");
       },
-      () => {
+      (error) => {
+        if (!requestActive) return;
+        requestActive = false;
+        window.clearTimeout(locationTimeoutId);
         setLocating(false);
-        setLocationError("没有获得定位权限。请在浏览器设置中允许位置访问后重试。");
+        setLocationError(error.code === error.PERMISSION_DENIED
+          ? "没有获得定位权限。请在 iPhone 设置中允许 Safari 访问位置后重试。"
+          : error.code === error.TIMEOUT
+            ? "定位请求超时。请保持 Safari 在前台并重试。"
+            : "暂时无法获取当前位置。请确认系统定位服务已开启后重试。");
       },
       { enableHighAccuracy: false, timeout: 8000, maximumAge: 300000 }
     );
