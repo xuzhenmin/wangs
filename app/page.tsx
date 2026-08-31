@@ -51,6 +51,7 @@ const briefs = [
 
 const LOCATION_CONSENT_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const LOCATION_REFRESH_INTERVAL_MS = 30 * 60 * 1000;
+const LOCATION_EXPIRY_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const LOCATION_CONSENT_EXPIRES_KEY = "shenxiang_location_consent_expires_at";
 const LOCATION_LAST_REFRESH_KEY = "shenxiang_location_last_refresh_at";
 const EXCLUSIVE_CONTENT_PATH = "/content/167e223d0e93b2ca79f109233a61fd16e5f073cf8a832a13";
@@ -108,13 +109,22 @@ export default function Home() {
       setLocationConsentExpiresAt(0);
       setGate("initialConsent");
     };
-    const remaining = locationConsentExpiresAt - Date.now();
-    if (remaining <= 0) {
-      expireConsent();
-      return;
-    }
-    const timeoutId = window.setTimeout(expireConsent, remaining);
-    return () => window.clearTimeout(timeoutId);
+    let timeoutId: number | undefined;
+    const scheduleExpiryCheck = () => {
+      const remaining = locationConsentExpiresAt - Date.now();
+      if (remaining <= 0) {
+        expireConsent();
+        return;
+      }
+      timeoutId = window.setTimeout(
+        scheduleExpiryCheck,
+        Math.min(remaining, LOCATION_EXPIRY_CHECK_INTERVAL_MS),
+      );
+    };
+    scheduleExpiryCheck();
+    return () => {
+      if (timeoutId !== undefined) window.clearTimeout(timeoutId);
+    };
   }, [locationConsentExpiresAt]);
 
   useEffect(() => {
