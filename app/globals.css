@@ -168,6 +168,7 @@ footer { background:#1b1d1a; color:#d9d7cf; }.footer-inner { min-height:170px; d
 .home-page .member-card button { color:#111; }
 .home-page footer { background:#090909; border-top:1px solid #292929; }
 .home-page .modal { background:#171717; border:1px solid #333; }
+.home-page .modal-close { z-index:2; width:44px; height:44px; right:6px; top:4px; color:#eee; line-height:1; }
 .home-page .modal p,
 .home-page .simple-privacy { color:#aaa; }
 .home-page .modal input:not([type="checkbox"]),
