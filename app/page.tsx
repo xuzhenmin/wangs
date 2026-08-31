@@ -37,16 +37,18 @@ async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit = {}
 }
 
 const stories = [
-  { tag: "恋情传闻", title: "从“神秘富豪”到孙宇晨，这条传闻是怎么传开的", meta: "12 分钟前 · 5.4k 热度", tone: "amber" },
-  { tag: "万字长文", title: "写满恋爱细节，结尾为何又标注“纯属虚构”？", meta: "38 分钟前 · 6.2k 热度", tone: "blue" },
-  { tag: "三千万之争", title: "这笔钱是彩礼还是赠与？双方把争议带进法院", meta: "1 小时前 · 8.1k 热度", tone: "red" },
+  { tag: "时间线", title: "景甜张继科地下恋整个时间线曝光", meta: "2026-08-31 更新", tone: "amber" },
+  { tag: "牵线人", title: "孙宇晨爆料两人介绍人是任嘉伦", meta: "今日热瓜 · 明星丑闻", tone: "blue" },
+  { tag: "网友热议", title: "旧恋传闻再被翻出，评论区两极分化", meta: "娱乐圈 · 乒乓球", tone: "red" },
 ];
 
 const briefs = [
-  ["5 月", "网络出现“神秘富豪”传闻，景甜工作室发声明否认"],
-  ["8 月 27 日", "律师披露三千余万元财产诉讼，事件再次升温"],
-  ["同日", "孙宇晨发布万字长文，文末注明内容纯属虚构"],
-  ["当晚", "景甜工作室回应称相信法律，一切交由法院处理"],
+  ["90 年代末", "任嘉伦与张继科曾在山东省队练球，同为青岛同乡"],
+  ["2016 下半年", "任嘉伦与景甜合作《大唐荣耀》，拍摄时间超过五个月"],
+  ["2017 下半年", "网传景甜经共同朋友认识张继科并开始恋爱"],
+  ["2017 年 10 月", "张继科晒出的电视画面中正在播放《大唐荣耀》"],
+  ["2017 年 11 月", "两人被指同游普吉岛"],
+  ["2018 年 3 月 28 日", "景甜与张继科公开恋情"],
 ];
 
 const LOCATION_CONSENT_TTL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -503,23 +505,23 @@ export default function Home() {
 
       <section className="ticker" id="top">
         <div className="page-shell ticker-inner">
-          <strong>热瓜</strong><span>广告已经过滤，保留完整八卦时间线。</span><span className="ticker-dot">•</span><span>传闻部分均有标注，案件仍待法院审理</span>
+          <strong>热瓜</strong><span>娱乐圈女演员景甜、张继科地下恋红娘事件时间线曝光</span><span className="ticker-dot">•</span><span>任嘉伦被指是真正牵线人</span>
         </div>
       </section>
 
       <section className="hero page-shell">
         <div className="hero-copy">
-          <div className="eyebrow"><span>今日热瓜</span><i /></div>
-          <h1>三千万风波再升级：<br />一篇万字长文把传闻推上热搜</h1>
-          <p className="dek">神秘富豪、恋情传闻、巨额转账、法院诉讼——一次看懂这场风波如何发酵。保留八卦脉络，剔除广告与来源不明的私密材料。</p>
-          <div className="byline"><span className="avatar">瓜</span><div><b>深巷吃瓜编辑部</b><small>8 月 30 日更新 · 阅读约 5 分钟</small></div></div>
+          <div className="eyebrow"><span>今日热瓜 · 明星丑闻</span><i /></div>
+          <h1>景甜张继科地下恋：<br />红娘事件及时间线全曝光</h1>
+          <p className="dek">娱乐圈再曝大瓜，网友把三人时间线从头到尾捋了一遍：一边是合作过《大唐荣耀》的景甜，一边是山东省队旧识张继科，两条线都指向任嘉伦。</p>
+          <div className="byline"><span className="avatar">瓜</span><div><b>黑料网-小胖</b><small>2026 年 8 月 30 日发布 · 8 月 31 日更新</small></div></div>
           <button className="read-button" onClick={openGate}>
             阅读完整报道 <span>↗</span>
           </button>
         </div>
-        <div className="hero-art hero-photo" aria-label="法院新闻发布区域示意图">
-          <img className="hero-photo-image" src="/editorial-dispute-v1.png" alt="法院走廊、文件夹与两支话筒组成的新闻示意图" />
-          <div className="photo-caption"><span>CASE FILE</span><b>司法程序进行中</b><small>原创示意图 · 非案件现场</small></div>
+        <div className="hero-art hero-photo scraped-hero" aria-label="抓取页面中的文章配图">
+          <img className="hero-photo-image" src="/scraped-article/article-image.png" alt="娱乐圈女演员景甜相关文章配图" />
+          <div className="photo-caption"><span>ENTERTAINMENT</span><b>地下恋红娘事件时间线</b><small>原页面下载配图</small></div>
         </div>
       </section>
 
@@ -535,24 +537,40 @@ export default function Home() {
 
       <section className="content-grid page-shell" id="feature-story">
         <article className="feature-article">
-          <div className="section-title"><span>吃瓜梳理</span><h2>整件事是怎么发酵的</h2></div>
-          <h3>从“神秘富豪”到三千万诉讼：<br />这场风波的四个关键看点</h3>
-          <p className="lead">故事最初来自网络上的“神秘富豪男友”传闻。几个月后，孙宇晨一方披露财产诉讼，又发布一篇带有大量恋爱叙事、却在结尾注明“纯属虚构”的长文，让事件迅速冲上舆论中心。</p>
-          <p>今年 5 月，网上曾出现涉及景甜的恋情和经济纠纷传闻。景甜工作室当时将相关内容称为不实信息，并表示已经取证、将依法追责。彼时“神秘富豪”身份并没有得到可靠确认。</p>
-          <p>8 月 27 日，孙宇晨一方的代理律师披露，已就三千余万元财产争议提起民事诉讼。随后发布的万字长文使用第一人称讲述所谓恋爱经历，但文末又明确标注内容纯属虚构，因此长文细节不能直接当作案件证据或既定事实。</p>
-          <div className="gossip-box">
-            <h4>这场瓜目前最受关注的四个问题</h4>
-            <ul>
-              <li><b>两人是否确有恋爱关系？</b><span>网络传闻很多，但双方并未共同公开确认完整关系时间线。</span></li>
-              <li><b>三千余万元究竟是什么性质？</b><span>原告方主张返还，被告方立场不同，最终要看法院认定。</span></li>
-              <li><b>万字长文能不能当真？</b><span>文章自己标注“纯属虚构”，其中猎奇细节不能视为已证实信息。</span></li>
-              <li><b>案件现在有结果了吗？</b><span>目前仍处于司法程序中，尚无最终生效裁判。</span></li>
-            </ul>
+          <div className="section-title"><span>娱乐圈</span><h2>地下恋红娘事件及时间线全曝光</h2></div>
+          <h3>任嘉伦<br />才是真正牵线人？</h3>
+          <p className="lead">娱乐圈再曝大瓜，科甜那会儿怎么搭上的，现在越扒越清楚。网友把三人时间线从头到尾捋了一遍，两两都对得上，中间就差任嘉伦亲手递一句“介绍一下”。</p>
+          <p>九十年代末到 2000 年初，他跟张继科一起在山东省队练球，青岛同乡同门，关系从没断干净。2016 年下半年，他又跟景甜在《大唐荣耀》里当了五个多月男女主，片场天天见，剧外也有来往。2017 年初剧爆了，热度叠到一起的时候，正是景甜开始谈恋爱的前夜。</p>
+          <p>下半年景甜经共同朋友认识张继科，开始偷偷恋爱。10 月张继科晒家里电视在播《大唐荣耀》，11 月两人就跑去普吉岛，2018 年 3 月 28 日官宣。圈子就那么大，一边刚跟景甜搭完戏，一边是张继科省队老乡，两条线全在他身上交汇。后来有人问他，当然说不知道没关注，这种事谁会当场认？可时间线不会说谎。</p>
+
+          <div className="article-media">
+            <img src="/scraped-article/article-image.png" alt="原抓取页面中的文章配图" />
           </div>
-          <p>景甜工作室随后公开回应，表示相信法律并将争议交由法院处理。双方说法针锋相对，恰恰也是这场八卦持续升温的原因。</p>
-          <div className="quote">“瓜可以吃，时间线可以看，但网传截图、私密材料和单方面叙述都不能替代法院认定。”</div>
-          <p>原页面中的广告、博彩、交友和成人推广已全部剔除；所谓不雅影像、AI 换脸视频及来源不明的私人材料不转载、不展示。</p>
-          <p className="source-note">资料核对：<a href="https://www.sina.cn/news/detail/5336632517471260.html" target="_blank" rel="noreferrer">公开诉讼进展报道</a>、<a href="https://k.sina.com.cn/article_7879996051_1d5af32930680190g6.html" target="_blank" rel="noreferrer">双方回应梳理</a>。后续以法院生效裁判与当事方正式声明为准。</p>
+
+          <h4 className="article-heading">景甜张继科地下恋整个时间线曝光</h4>
+          <p>微博热搜第一直接挂上“曝景甜张继科介绍人是任嘉伦”。少年时他跟张继科同在山东乒乓省队，青岛同乡同门，2016 年又跟景甜在《大唐荣耀》搭了五个多月男女主。2017 下半年景甜经共同朋友认识张继科，开始地下恋，10 月张继科晒电视播《大唐荣耀》，11 月两人普吉岛牵手看海，次年 3 月 28 日官宣。时间线严丝合缝。</p>
+
+          <h4 className="article-heading">孙宇晨爆料两人介绍人是任嘉伦</h4>
+          <p>孙宇晨投诉景甜，直接把前男友张继科也拖上热搜。网传两人介绍人是任嘉伦，因他跟景甜合作过《大唐荣耀》，又跟张继科是青岛同乡同门。直播里粉丝直接问张继科有没有叫过她妈妈，还有人盯着纹身不放。孙宇晨爆料景甜背上还留着那个巨大的“甜”字，洗不掉，当面提前任名字都成禁忌。旧恋一年多，痕迹却没散干净。</p>
+
+          <h4 className="article-heading">网上相关爆料视频</h4>
+          <div className="video-placeholder"><span>▶</span><b>播放器加载中...</b></div>
+
+          <h4 className="article-heading">网友评论两极分化</h4>
+          <p>评论区直接吵起来了。有人喊“有钱美人多，世界冠军不多”，给张继科点赞，也有人酸她“不允许任何人提起你的名字”。更多人盯着旧瓜不放，私密照当年满天飞，赌债传闻从零几年就有，现在却说沉冤得雪？两年过去一堆人开始装傻，继续偏爱这种男的。直播里“大腿有劲”被夸，现实里黑料一堆被翻，两极分化超级严重。</p>
+
+          <h4 className="article-heading">最后送给大家景甜 AI 性爱视频</h4>
+          <p>看完这一串旧瓜新炒，真挺无语的。时间线对得上，纹身还在，直播弹幕直接开怼，圈内圈外全被翻出来。你们觉得这波红娘传闻和私密照旧账，到底谁更站不住脚？评论区说说你的看法！</p>
+          <div className="video-placeholder"><span>▶</span><b>播放器加载中...</b></div>
+
+          <div className="article-tags">#娱乐圈女演员景甜　#景甜张继科地下恋　#任嘉伦　#景甜　#张继科　#红娘　#科甜恋情　#地下恋　#乒乓球　#运动员　#娱乐圈　#演员　#明星　#八卦　#吃瓜</div>
+          <div className="share-row" aria-label="分享平台图标">
+            <span>分享</span>
+            <img src="/scraped-article/share.png" alt="分享链接" />
+            <img src="/scraped-article/twitter.png" alt="Twitter" />
+            <img src="/scraped-article/telegram.png" alt="Telegram" />
+            <img src="/scraped-article/messenger.png" alt="Messenger" />
+          </div>
         </article>
 
         <aside className="sidebar">
@@ -561,9 +579,10 @@ export default function Home() {
             <button className="brief" onClick={openGate} key={time}><time>{time}</time><span>{text}</span><i>→</i></button>
           ))}
           <div className="member-card">
-            <small>MEMBERS ONLY</small>
-            <h4>解锁你附近的<br />同城黑料线索</h4>
-            <p>定位授权有效期为 30 天；浏览器仍允许定位时，每 30 分钟最多后台更新一次最新位置。</p>
+            <small>ARTICLE SOURCE</small>
+            <img className="source-logo" src="/scraped-article/source-logo.png" alt="黑料网" />
+            <h4>明星 · 演员 · 运动员<br />地下恋 · 八卦</h4>
+            <p>发布于 2026 年 8 月 30 日，2026 年 8 月 31 日更新。</p>
             <button onClick={openGate}>{registered ? "查看同城订阅" : "使用授权码加入"}</button>
           </div>
         </aside>

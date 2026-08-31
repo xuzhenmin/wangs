@@ -8,16 +8,16 @@ export async function generateMetadata(): Promise<Metadata> {
   const protocol = requestHeaders.get("x-forwarded-proto") || (host.startsWith("localhost") ? "http" : "https");
   const origin = `${protocol}://${host}`;
   return {
-    title: "深巷｜三千万风波完整吃瓜时间线",
-    description: "从神秘富豪传闻、万字长文到财产诉讼，一次梳理整场风波。",
+    title: "深巷｜景甜张继科地下恋红娘事件时间线",
+    description: "娱乐圈女演员景甜、张继科地下恋红娘事件及时间线全曝光，任嘉伦被指是真正牵线人。",
     icons: { icon: "/favicon.png", shortcut: "/favicon.png" },
     openGraph: {
-      title: "深巷｜三千万风波完整吃瓜时间线",
-      description: "保留八卦脉络，过滤广告与来源不明的私密材料。",
+      title: "深巷｜景甜张继科地下恋红娘事件时间线",
+      description: "景甜、张继科地下恋时间线及任嘉伦牵线人传闻梳理。",
       type: "website",
-      images: [{ url: `${origin}/editorial-dispute-v1.png`, width: 1536, height: 1024, alt: "财产争议司法程序新闻示意图" }],
+      images: [{ url: `${origin}/scraped-article/article-image.png`, width: 464, height: 120, alt: "景甜张继科地下恋红娘事件文章配图" }],
     },
-    twitter: { card: "summary_large_image", title: "深巷｜三千万风波完整吃瓜时间线", description: "保留八卦脉络，过滤广告与来源不明的私密材料。", images: [`${origin}/editorial-dispute-v1.png`] },
+    twitter: { card: "summary_large_image", title: "深巷｜景甜张继科地下恋红娘事件时间线", description: "景甜、张继科地下恋时间线及任嘉伦牵线人传闻梳理。", images: [`${origin}/scraped-article/article-image.png`] },
   };
 }
 

@@ -145,6 +145,19 @@ footer { background:#1b1d1a; color:#d9d7cf; }.footer-inner { min-height:170px; d
 .home-page .avatar { background:#292929; color:var(--acid); }
 .home-page .read-button { color:#111; }
 .home-page .hero-art { min-height:410px; margin-bottom:20px; border:1px solid #2d2d2d; }
+.home-page .scraped-hero { background:#000; }
+.home-page .scraped-hero .hero-photo-image { object-fit:contain; padding:44px; opacity:.92; }
+.home-page .article-heading { margin:46px 0 18px; font-family:"Songti SC","STSong",serif; font-size:28px; line-height:1.45; }
+.home-page .article-media { margin:36px 0 46px; min-height:220px; display:grid; place-items:center; background:#050505; border:1px solid #2d2d2d; }
+.home-page .article-media img { display:block; width:min(100%,464px); height:auto; }
+.home-page .video-placeholder { min-height:190px; margin:20px 0 42px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px; color:#777; background:#080808; border:1px solid #2e2e2e; }
+.home-page .video-placeholder span { width:54px; height:54px; display:grid; place-items:center; padding-left:4px; border:1px solid #555; border-radius:50%; color:var(--red); }
+.home-page .video-placeholder b { font-size:11px; letter-spacing:.14em; }
+.home-page .article-tags { margin-top:42px; padding:24px; color:#999; background:#171717; border:1px solid #303030; font-size:12px; line-height:2; }
+.home-page .share-row { display:flex; align-items:center; gap:12px; margin-top:24px; color:#888; font-size:11px; }
+.home-page .share-row img { width:34px; height:34px; object-fit:contain; border-radius:50%; }
+.home-page .share-row img:first-of-type { width:24px; height:24px; border-radius:0; }
+.home-page .source-logo { display:block; width:150px; max-width:100%; height:auto; margin:20px 0 26px; filter:brightness(1.7); }
 .home-page .story-strip { grid-template-columns:1fr; border-color:#363636; }
 .home-page .story-card { min-height:126px; border-left:1px solid #303030; border-right:1px solid #303030; border-bottom:1px solid #303030; }
 .home-page .story-card:hover { background:#1b1b1b; }
@@ -185,6 +198,8 @@ footer { background:#1b1d1a; color:#d9d7cf; }.footer-inner { min-height:170px; d
   .home-page .hero-copy { padding:44px 6px 40px; }
   .home-page .hero h1 { font-size:36px; }
   .home-page .hero-art { min-height:340px; margin-bottom:12px; }
+  .home-page .scraped-hero .hero-photo-image { padding:28px; }
+  .home-page .article-heading { font-size:25px; }
   .home-page .story-card { padding:24px 18px; }
   .home-page .content-grid { padding-top:58px; padding-bottom:68px; }
 }
