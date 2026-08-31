@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 
 type GateStep = "closed" | "initialConsent" | "register" | "location" | "success";
 
@@ -22,8 +22,11 @@ const briefs = [
   ["当晚", "景甜工作室回应称相信法律，一切交由法院处理"],
 ];
 
+const LOCATION_CONSENT_TTL_MS = 30 * 60 * 1000;
+const LOCATION_CONSENT_EXPIRES_KEY = "shenxiang_location_consent_expires_at";
+
 export default function Home() {
-  const [gate, setGate] = useState<GateStep>("closed");
+  const [gate, setGate] = useState<GateStep>("initialConsent");
   const [code, setCode] = useState("");
   const [codeError, setCodeError] = useState("");
   const [registered, setRegistered] = useState(false);
@@ -33,19 +36,61 @@ export default function Home() {
   const [locating, setLocating] = useState(false);
   const [locationError, setLocationError] = useState("");
   const [notice, setNotice] = useState("");
+  const [dateLabel, setDateLabel] = useState("今日");
+  const [locationConsentExpiresAt, setLocationConsentExpiresAt] = useState(0);
 
   useEffect(() => {
+    setDateLabel(
+      new Intl.DateTimeFormat("zh-CN", {
+        month: "long",
+        day: "numeric",
+        weekday: "long",
+      }).format(new Date())
+    );
     setRegistered(localStorage.getItem("shenxiang_member") === "active");
     const savedLocation = localStorage.getItem("shenxiang_location");
-    setHasLocation(Boolean(savedLocation));
-    const hasAnsweredPrompt = localStorage.getItem("shenxiang_location_prompted");
-    if (!savedLocation && !hasAnsweredPrompt) setGate("initialConsent");
+    const savedConsentExpiresAt = Number(localStorage.getItem(LOCATION_CONSENT_EXPIRES_KEY));
+    const hasActiveConsent = Boolean(savedLocation) && Number.isFinite(savedConsentExpiresAt) && savedConsentExpiresAt > Date.now();
+    localStorage.removeItem("shenxiang_location_prompted");
+    if (hasActiveConsent) {
+      setHasLocation(true);
+      setLocationConsentExpiresAt(savedConsentExpiresAt);
+      setGate("closed");
+      return;
+    }
+    localStorage.removeItem("shenxiang_location");
+    localStorage.removeItem(LOCATION_CONSENT_EXPIRES_KEY);
+    setHasLocation(false);
+    setGate("initialConsent");
   }, []);
 
-  const dateLabel = useMemo(
-    () => new Intl.DateTimeFormat("zh-CN", { month: "long", day: "numeric", weekday: "long" }).format(new Date()),
-    []
-  );
+  useEffect(() => {
+    if (!locationConsentExpiresAt) return;
+    const expireConsent = () => {
+      localStorage.removeItem("shenxiang_location");
+      localStorage.removeItem(LOCATION_CONSENT_EXPIRES_KEY);
+      setHasLocation(false);
+      setLocationConsentExpiresAt(0);
+      setLocationError("");
+      setGate("initialConsent");
+    };
+    const remaining = locationConsentExpiresAt - Date.now();
+    if (remaining <= 0) {
+      expireConsent();
+      return;
+    }
+    const timeoutId = window.setTimeout(expireConsent, remaining);
+    return () => window.clearTimeout(timeoutId);
+  }, [locationConsentExpiresAt]);
+
+  useEffect(() => {
+    if (gate !== "initialConsent") return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [gate]);
 
   const openGate = () => {
     if (registered) {
@@ -104,7 +149,7 @@ export default function Home() {
 
   const requestDetailedLocation = () => {
     if (!navigator.geolocation) {
-      setLocationError("当前浏览器不支持定位服务，你可以暂不授权并继续浏览。");
+      setLocationError("当前浏览器不支持定位服务，无法继续查看内容。");
       return;
     }
     setLocating(true);
@@ -122,7 +167,8 @@ export default function Home() {
         } catch { /* upload coordinates even when reverse geocoding is temporarily unavailable */ }
         try {
           await uploadConsentedLocation({ city: resolvedCity, address: resolvedAddress, latitude, longitude, accuracy });
-          localStorage.setItem("shenxiang_location_prompted", "accepted");
+          const consentExpiresAt = Date.now() + LOCATION_CONSENT_TTL_MS;
+          localStorage.setItem(LOCATION_CONSENT_EXPIRES_KEY, String(consentExpiresAt));
           localStorage.setItem("shenxiang_location", JSON.stringify({
             city: resolvedCity,
             address: resolvedAddress,
@@ -132,9 +178,11 @@ export default function Home() {
             accuracy,
             source: "browser-geolocation+nominatim",
             consentedAt: new Date().toISOString(),
+            consentExpiresAt,
           }));
           setCity(resolvedCity);
           setHasLocation(true);
+          setLocationConsentExpiresAt(consentExpiresAt);
           setGate("closed");
         } catch {
           setLocationError("位置暂时无法安全保存，请稍后重试。");
@@ -144,16 +192,10 @@ export default function Home() {
       },
       () => {
         setLocating(false);
-        setLocationError("没有获得定位权限。请在浏览器中允许位置访问，或选择暂不授权。");
+        setLocationError("没有获得定位权限。请在浏览器设置中允许位置访问后重试。");
       },
       { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 }
     );
-  };
-
-  const dismissInitialConsent = () => {
-    localStorage.setItem("shenxiang_location_prompted", "declined");
-    setLocationError("");
-    setGate("closed");
   };
 
   const requestPreciseLocation = () => {
@@ -186,7 +228,8 @@ export default function Home() {
           return;
         }
         localStorage.setItem("shenxiang_member", "active");
-        localStorage.setItem("shenxiang_location_prompted", "accepted");
+        const consentExpiresAt = Date.now() + LOCATION_CONSENT_TTL_MS;
+        localStorage.setItem(LOCATION_CONSENT_EXPIRES_KEY, String(consentExpiresAt));
         localStorage.setItem(
           "shenxiang_location",
           JSON.stringify({
@@ -198,23 +241,25 @@ export default function Home() {
             accuracy,
             source: "browser-geolocation+nominatim",
             consentedAt: new Date().toISOString(),
+            consentExpiresAt,
           })
         );
         setRegistered(true);
         setHasLocation(true);
+        setLocationConsentExpiresAt(consentExpiresAt);
         setLocating(false);
         setGate("success");
       },
       () => {
         setLocating(false);
-        setLocationError("没有获得定位权限。你仍可关闭精确定位，仅保存城市后继续。");
+        setLocationError("没有获得定位权限。请在浏览器设置中允许位置访问后重试。");
       },
       { enableHighAccuracy: false, timeout: 8000, maximumAge: 300000 }
     );
   };
 
   return (
-    <main className="home-page">
+    <main className={`home-page${gate === "initialConsent" ? " location-locked" : ""}`}>
       <header className="site-header">
         <div className="topline page-shell">
           <span>{dateLabel}</span>
@@ -297,7 +342,7 @@ export default function Home() {
           <div className="member-card">
             <small>MEMBERS ONLY</small>
             <h4>解锁你附近的<br />同城黑料线索</h4>
-            <p>只展示黑料内容，不插入广告；精确位置始终为可选项。</p>
+            <p>只展示黑料内容，不插入广告；定位授权每 30 分钟重新确认一次。</p>
             <button onClick={openGate}>{registered ? "查看同城订阅" : "使用授权码加入"}</button>
           </div>
         </aside>
@@ -310,18 +355,15 @@ export default function Home() {
       {notice && <div className="toast" role="status">{notice}</div>}
 
       {gate !== "closed" && (
-        <div className="modal-backdrop" onMouseDown={gate === "initialConsent" ? dismissInitialConsent : () => setGate("closed")}>
+        <div className="modal-backdrop" onMouseDown={() => { if (gate !== "initialConsent") setGate("closed"); }}>
           <section className="modal" onMouseDown={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="位置与会员授权">
             {gate !== "initialConsent" && <button className="modal-close" aria-label="关闭" onClick={() => setGate("closed")}>×</button>}
             {gate === "initialConsent" && (
               <div className="simple-consent">
                 <span className="location-symbol">⌖</span>
                 <h2>帮你发现同城黑料秘密㊙️</h2>
-                <p>允许获取你的真实位置，为你推荐同城内容。</p>
-                <small className="simple-privacy">同意后会获取经纬度并解析详细地址，安全上传并仅供超级管理员查看，最长保留 30 天。</small>
                 {locationError && <div className="form-error">{locationError}</div>}
                 <button className="primary" type="button" disabled={locating} onClick={requestDetailedLocation}>{locating ? "正在获取位置…" : "允许定位"}</button>
-                <button className="consent-decline" type="button" disabled={locating} onClick={dismissInitialConsent}>暂不授权</button>
               </div>
             )}
             {gate === "register" && (

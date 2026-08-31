@@ -119,6 +119,7 @@ footer { background:#1b1d1a; color:#d9d7cf; }.footer-inner { min-height:170px; d
   background:var(--paper);
   box-shadow:0 0 80px #000;
 }
+.home-page.location-locked > :not(.modal-backdrop) { visibility:hidden; }
 .home-page .page-shell { width:calc(100% - 40px); }
 .home-page .site-header { background:#111; }
 .home-page .topline { color:#888; }
