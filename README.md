@@ -89,7 +89,7 @@ actions tied to the current ChatGPT user. Leave public content anonymous.
 
 - `npm run dev`: start local development
 - `npm run build`: verify the vinext build output
-- `npm run local:start`: start the Cloudflare-compatible local site in the background at `http://127.0.0.1:3000`
+- `npm run local:start`: start the Cloudflare-compatible local site in the background at `http://127.0.0.1:3217`
 - `npm run local:pause`: safely pause the background site process
 - `npm run local:status`: show whether the local site is running
 - `npm run scrape -- https://example.com/article`: save one authorized page as cleaned text and JSON
