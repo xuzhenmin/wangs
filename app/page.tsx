@@ -137,12 +137,7 @@ export default function Home() {
   }, [gate]);
 
   const openGate = () => {
-    if (isExclusiveContent) return;
-    if (registered) {
-      setNotice("该栏目将在下一期开放，已为你保留同城订阅。");
-      window.setTimeout(() => setNotice(""), 2800);
-      return;
-    }
+    setCodeError("");
     setGate("register");
   };
 
@@ -496,7 +491,7 @@ export default function Home() {
           <h1>三千万风波再升级：<br />一篇万字长文把传闻推上热搜</h1>
           <p className="dek">神秘富豪、恋情传闻、巨额转账、法院诉讼——一次看懂这场风波如何发酵。保留八卦脉络，剔除广告与来源不明的私密材料。</p>
           <div className="byline"><span className="avatar">瓜</span><div><b>深巷吃瓜编辑部</b><small>8 月 30 日更新 · 阅读约 5 分钟</small></div></div>
-          <button className="read-button" onClick={() => document.getElementById("feature-story")?.scrollIntoView({ behavior: "smooth" })}>
+          <button className="read-button" onClick={openGate}>
             阅读完整报道 <span>↗</span>
           </button>
         </div>
