@@ -5,7 +5,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 RUNTIME_DIR="$PROJECT_DIR/.runtime"
 NODE_LINK="$RUNTIME_DIR/node"
-DOWNLOAD_BASE="https://nodejs.org/dist/latest-v22.x"
+DOWNLOAD_BASES=(
+  "https://nodejs.org/dist/latest-v22.x"
+  "https://mirrors.huaweicloud.com/nodejs/latest-v22.x"
+)
+if [[ -n "${NODE_DOWNLOAD_MIRROR:-}" ]]; then
+  DOWNLOAD_BASES=("${NODE_DOWNLOAD_MIRROR%/}" "${DOWNLOAD_BASES[@]}")
+fi
 
 if [[ "$(uname -s)" != "Linux" ]]; then
   echo "此安装脚本仅用于 Linux 服务器。" >&2
@@ -40,10 +46,22 @@ cleanup() {
 }
 trap cleanup EXIT
 
-echo "正在获取 Node.js 22 官方版本信息…"
-curl --fail --silent --show-error --location \
-  "$DOWNLOAD_BASE/SHASUMS256.txt" \
-  --output "$TEMP_DIR/SHASUMS256.txt"
+SELECTED_BASE=""
+for download_base in "${DOWNLOAD_BASES[@]}"; do
+  echo "正在尝试下载源：$download_base"
+  if curl --fail --silent --show-error --location \
+    --connect-timeout 10 --max-time 60 --retry 2 \
+    "$download_base/SHASUMS256.txt" \
+    --output "$TEMP_DIR/SHASUMS256.txt"; then
+    SELECTED_BASE="$download_base"
+    break
+  fi
+  echo "当前下载源不可用，尝试下一个…" >&2
+done
+if [[ -z "$SELECTED_BASE" ]]; then
+  echo "Node.js 官方源和备用镜像均无法访问，请检查服务器出站 HTTPS 网络。" >&2
+  exit 1
+fi
 
 ARCHIVE_NAME="$(awk -v suffix="linux-$NODE_ARCH.tar.xz" '$2 ~ suffix "$" { print $2; exit }' "$TEMP_DIR/SHASUMS256.txt")"
 if [[ -z "$ARCHIVE_NAME" ]]; then
@@ -53,7 +71,8 @@ fi
 
 echo "正在下载 $ARCHIVE_NAME …"
 curl --fail --silent --show-error --location \
-  "$DOWNLOAD_BASE/$ARCHIVE_NAME" \
+  --connect-timeout 10 --max-time 900 --retry 2 \
+  "$SELECTED_BASE/$ARCHIVE_NAME" \
   --output "$TEMP_DIR/$ARCHIVE_NAME"
 
 EXPECTED_SHA256="$(awk -v file="$ARCHIVE_NAME" '$2 == file { print $1; exit }' "$TEMP_DIR/SHASUMS256.txt")"
@@ -84,7 +103,7 @@ fi
 ln -sfn "$EXTRACTED_NAME" "$NODE_LINK"
 
 NODE_VERSION="$($NODE_LINK/bin/node -v)"
-NPM_VERSION="$($NODE_LINK/bin/npm -v)"
+NPM_VERSION="$(PATH="$NODE_LINK/bin:$PATH" "$NODE_LINK/bin/npm" -v)"
 echo "安装完成：Node.js $NODE_VERSION，npm $NPM_VERSION"
 echo "项目启动脚本将自动使用：$NODE_LINK/bin/node"
 echo "现在可以运行：./scripts/start-local.sh"
