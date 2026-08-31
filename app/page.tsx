@@ -185,19 +185,19 @@ export default function Home() {
 
   const reverseGeocode = async (latitude: number, longitude: number) => {
     const startedAt = performance.now();
-    const params = new URLSearchParams({
-      format: "jsonv2",
-      lat: String(latitude),
-      lon: String(longitude),
-      zoom: "18",
-      addressdetails: "1",
-      "accept-language": "zh-CN,zh,en",
-    });
-    locationLog("reverse_geocode_started", { latitude, longitude, timeoutMs: 6000 });
-    const response = await fetchWithTimeout(`https://nominatim.openstreetmap.org/reverse?${params.toString()}`, {}, 6000);
+    const requestId = crypto.randomUUID();
+    locationLog("reverse_geocode_started", { requestId, latitude, longitude, provider: "amap", timeoutMs: 20000 });
+    const response = await fetchWithTimeout("/api/reverse-geocode", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ requestId, latitude, longitude }),
+    }, 20000);
     const durationMs = Math.round(performance.now() - startedAt);
-    locationLog("reverse_geocode_response", { status: response.status, ok: response.ok, durationMs });
-    if (!response.ok) throw new Error(`reverse-geocoding-http-${response.status}`);
+    locationLog("reverse_geocode_response", { requestId, status: response.status, ok: response.ok, durationMs });
+    if (!response.ok) {
+      const failure = await response.json().catch(() => null) as { detail?: string; error?: string } | null;
+      throw new Error(failure?.detail || failure?.error || `reverse-geocoding-http-${response.status}`);
+    }
     const result = await response.json() as ReverseAddress;
     locationLog("reverse_geocode_succeeded", {
       durationMs,
@@ -278,7 +278,7 @@ export default function Home() {
       latitude,
       longitude,
       accuracy,
-      source: "browser-geolocation+nominatim",
+      source: "browser-geolocation+amap",
       consentedAt: originalConsentedAt,
       refreshedAt: new Date(refreshedAt).toISOString(),
       consentExpiresAt,
