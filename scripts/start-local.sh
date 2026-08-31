@@ -26,9 +26,13 @@ launchd_service_exists() {
 }
 
 find_listener_pid() {
+  local listener_pid=""
   if command -v lsof >/dev/null 2>&1; then
-    lsof -nP -iTCP:"$SITE_PORT" -sTCP:LISTEN -t 2>/dev/null | head -n 1 || true
-    return
+    listener_pid="$(lsof -nP -iTCP:"$SITE_PORT" -sTCP:LISTEN -t 2>/dev/null | head -n 1 || true)"
+    if [[ -n "$listener_pid" ]]; then
+      echo "$listener_pid"
+      return
+    fi
   fi
   if command -v ss >/dev/null 2>&1; then
     ss -ltnp 2>/dev/null \
@@ -121,12 +125,19 @@ fi
 
 for _ in {1..160}; do
   LISTENER_PID="$(find_listener_pid)"
-  if [[ -n "$LISTENER_PID" ]] && is_this_site_process "$LISTENER_PID" && \
-    curl --silent --show-error --fail --max-time 2 "$SITE_URL/" >/dev/null 2>&1; then
-    echo "$LISTENER_PID" > "$PID_FILE"
-    echo "启动成功：$SITE_URL"
-    echo "日志文件：$LOG_FILE"
-    exit 0
+  if curl --noproxy "*" --silent --show-error --fail --max-time 2 "$SITE_URL/" >/dev/null 2>&1; then
+    if [[ -n "$SITE_PID" ]] && kill -0 "$SITE_PID" 2>/dev/null; then
+      echo "$SITE_PID" > "$PID_FILE"
+      echo "启动成功：$SITE_URL"
+      echo "日志文件：$LOG_FILE"
+      exit 0
+    fi
+    if [[ -n "$LISTENER_PID" ]] && is_this_site_process "$LISTENER_PID"; then
+      echo "$LISTENER_PID" > "$PID_FILE"
+      echo "启动成功：$SITE_URL"
+      echo "日志文件：$LOG_FILE"
+      exit 0
+    fi
   fi
   if [[ -n "$SITE_PID" ]] && ! kill -0 "$SITE_PID" 2>/dev/null; then
     break
