@@ -32,8 +32,10 @@ find_listener_pid() {
 is_this_site_process() {
   local candidate_pid="$1"
   local candidate_command
+  local candidate_cwd
   candidate_command="$(ps -p "$candidate_pid" -o command= 2>/dev/null || true)"
-  [[ "$candidate_command" == *"$PROJECT_DIR"* && "$candidate_command" == *"vinext dev"* ]]
+  candidate_cwd="$(lsof -a -p "$candidate_pid" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p' | head -n 1)"
+  [[ "$candidate_cwd" == "$PROJECT_DIR" && "$candidate_command" == *"next"* ]]
 }
 
 if [[ -f "$PID_FILE" ]]; then
@@ -61,12 +63,21 @@ fi
 
 cd "$PROJECT_DIR"
 
-if [[ ! -x "$PROJECT_DIR/node_modules/.bin/vinext" ]]; then
-  echo "首次运行，正在安装依赖…"
-  npm install
+NODE_VERSION="$(node -p 'process.versions.node' 2>/dev/null || true)"
+if [[ -z "$NODE_VERSION" ]] || ! node -e 'const [major, minor] = process.versions.node.split(".").map(Number); process.exit(major > 22 || (major === 22 && minor >= 13) ? 0 : 1)' 2>/dev/null; then
+  echo "需要 Node.js 22.13.0 或更高版本，当前版本：${NODE_VERSION:-未安装}" >&2
+  exit 1
 fi
 
-echo "正在以 Cloudflare 兼容模式后台启动网站…"
+if [[ ! -x "$PROJECT_DIR/node_modules/.bin/next" ]]; then
+  echo "首次运行，正在安装依赖…"
+  npm ci
+fi
+
+echo "正在构建 Next.js 生产版本…"
+npm run build
+
+echo "正在以 Node.js 模式后台启动网站…"
 if can_use_launchd; then
   NODE_BIN="$(command -v node)"
   if launchd_service_exists; then
@@ -84,11 +95,11 @@ if can_use_launchd; then
     -o "$LOG_FILE" \
     -e "$LOG_FILE" \
     -- /bin/bash -c \
-    'cd "$1" && exec env WRANGLER_LOG_PATH=.wrangler/wrangler.log "$2" "$3" dev --hostname "$4" --port "$5"' \
-    _ "$PROJECT_DIR" "$NODE_BIN" "$PROJECT_DIR/node_modules/.bin/vinext" "$SITE_HOST" "$SITE_PORT"
+    'cd "$1" && exec "$2" "$3" start --hostname "$4" --port "$5"' \
+    _ "$PROJECT_DIR" "$NODE_BIN" "$PROJECT_DIR/node_modules/.bin/next" "$SITE_HOST" "$SITE_PORT"
   SITE_PID=""
 else
-  WRANGLER_LOG_PATH=.wrangler/wrangler.log nohup "$PROJECT_DIR/node_modules/.bin/vinext" dev \
+  nohup "$PROJECT_DIR/node_modules/.bin/next" start \
     --hostname "$SITE_HOST" \
     --port "$SITE_PORT" \
     > "$LOG_FILE" 2>&1 &
