@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 PID_FILE="$PROJECT_DIR/.local-site.pid"
 LOG_FILE="$PROJECT_DIR/.local-site.log"
-SITE_PORT="${LOCAL_SITE_PORT:-3000}"
+SITE_PORT="${LOCAL_SITE_PORT:-3217}"
 SITE_HOST="${LOCAL_SITE_HOST:-127.0.0.1}"
 SERVICE_LABEL="com.shenxiang.city-news.local"
 SITE_URL_HOST="$SITE_HOST"
@@ -55,7 +55,7 @@ if [[ -n "$EXISTING_LISTENER" ]]; then
     exit 0
   fi
   echo "端口 $SITE_PORT 已被其他程序占用，请改用其他端口，例如：" >&2
-  echo "LOCAL_SITE_PORT=3001 npm run local:start" >&2
+  echo "LOCAL_SITE_PORT=3218 npm run local:start" >&2
   exit 1
 fi
 
