@@ -158,7 +158,6 @@ export default function Home() {
   };
 
   const requestDetailedLocation = () => {
-    setGate("closed");
     if (!navigator.geolocation) {
       return;
     }
@@ -171,6 +170,7 @@ export default function Home() {
         if (!requestActive) return;
         requestActive = false;
         window.clearTimeout(locationTimeoutId);
+        setGate("closed");
         const { latitude, longitude, accuracy } = position.coords;
         let resolvedAddress = "地址名称暂时解析失败，已保存定位坐标";
         let resolvedCity = city;
@@ -218,9 +218,6 @@ export default function Home() {
       saveCityOnly();
       return;
     }
-    localStorage.setItem("shenxiang_member", "active");
-    setRegistered(true);
-    setGate("closed");
     if (!navigator.geolocation) {
       return;
     }
@@ -233,6 +230,9 @@ export default function Home() {
         if (!requestActive) return;
         requestActive = false;
         window.clearTimeout(locationTimeoutId);
+        localStorage.setItem("shenxiang_member", "active");
+        setRegistered(true);
+        setGate("closed");
         const { latitude, longitude, accuracy } = position.coords;
         let resolvedAddress = "地址名称暂时解析失败，已保存定位坐标";
         let resolvedCity = city;
