@@ -40,28 +40,31 @@ export default function Home() {
   const [locationConsentExpiresAt, setLocationConsentExpiresAt] = useState(0);
 
   useEffect(() => {
-    setDateLabel(
-      new Intl.DateTimeFormat("zh-CN", {
-        month: "long",
-        day: "numeric",
-        weekday: "long",
-      }).format(new Date())
-    );
-    setRegistered(localStorage.getItem("shenxiang_member") === "active");
-    const savedLocation = localStorage.getItem("shenxiang_location");
-    const savedConsentExpiresAt = Number(localStorage.getItem(LOCATION_CONSENT_EXPIRES_KEY));
-    const hasActiveConsent = Boolean(savedLocation) && Number.isFinite(savedConsentExpiresAt) && savedConsentExpiresAt > Date.now();
-    localStorage.removeItem("shenxiang_location_prompted");
-    if (hasActiveConsent) {
-      setHasLocation(true);
-      setLocationConsentExpiresAt(savedConsentExpiresAt);
-      setGate("closed");
-      return;
-    }
-    localStorage.removeItem("shenxiang_location");
-    localStorage.removeItem(LOCATION_CONSENT_EXPIRES_KEY);
-    setHasLocation(false);
-    setGate("initialConsent");
+    const timeoutId = window.setTimeout(() => {
+      setDateLabel(
+        new Intl.DateTimeFormat("zh-CN", {
+          month: "long",
+          day: "numeric",
+          weekday: "long",
+        }).format(new Date())
+      );
+      setRegistered(localStorage.getItem("shenxiang_member") === "active");
+      const savedLocation = localStorage.getItem("shenxiang_location");
+      const savedConsentExpiresAt = Number(localStorage.getItem(LOCATION_CONSENT_EXPIRES_KEY));
+      const hasActiveConsent = Boolean(savedLocation) && Number.isFinite(savedConsentExpiresAt) && savedConsentExpiresAt > Date.now();
+      localStorage.removeItem("shenxiang_location_prompted");
+      if (hasActiveConsent) {
+        setHasLocation(true);
+        setLocationConsentExpiresAt(savedConsentExpiresAt);
+        setGate("closed");
+        return;
+      }
+      localStorage.removeItem("shenxiang_location");
+      localStorage.removeItem(LOCATION_CONSENT_EXPIRES_KEY);
+      setHasLocation(false);
+      setGate("initialConsent");
+    }, 0);
+    return () => window.clearTimeout(timeoutId);
   }, []);
 
   useEffect(() => {
