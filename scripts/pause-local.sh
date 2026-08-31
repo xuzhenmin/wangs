@@ -8,9 +8,13 @@ SERVICE_LABEL="com.shenxiang.city-news.local"
 SITE_PORT="${LOCAL_SITE_PORT:-3217}"
 
 find_listener_pid() {
+  local listener_pid=""
   if command -v lsof >/dev/null 2>&1; then
-    lsof -nP -iTCP:"$SITE_PORT" -sTCP:LISTEN -t 2>/dev/null | head -n 1 || true
-    return
+    listener_pid="$(lsof -nP -iTCP:"$SITE_PORT" -sTCP:LISTEN -t 2>/dev/null | head -n 1 || true)"
+    if [[ -n "$listener_pid" ]]; then
+      echo "$listener_pid"
+      return
+    fi
   fi
   if command -v ss >/dev/null 2>&1; then
     ss -ltnp 2>/dev/null \
