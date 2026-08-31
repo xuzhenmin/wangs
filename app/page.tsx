@@ -9,6 +9,22 @@ type ReverseAddress = {
   address?: Record<string, string>;
 };
 
+type AddressResolutionDiagnostics = {
+  requestId: string;
+  status: "success" | "failed";
+  durationMs: number;
+  httpStatus?: number;
+  error?: string;
+};
+
+function locationLog(event: string, details: Record<string, unknown> = {}) {
+  console.info(`[location] ${event}`, { timestamp: new Date().toISOString(), ...details });
+}
+
+function errorDescription(error: unknown) {
+  return error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+}
+
 async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit = {}, timeoutMs = 8000) {
   const controller = new AbortController();
   const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
@@ -130,6 +146,7 @@ export default function Home() {
   };
 
   const reverseGeocode = async (latitude: number, longitude: number) => {
+    const startedAt = performance.now();
     const params = new URLSearchParams({
       format: "jsonv2",
       lat: String(latitude),
@@ -138,32 +155,53 @@ export default function Home() {
       addressdetails: "1",
       "accept-language": "zh-CN,zh,en",
     });
+    locationLog("reverse_geocode_started", { latitude, longitude, timeoutMs: 6000 });
     const response = await fetchWithTimeout(`https://nominatim.openstreetmap.org/reverse?${params.toString()}`, {}, 6000);
-    if (!response.ok) throw new Error("reverse-geocoding-failed");
-    return response.json() as Promise<ReverseAddress>;
+    const durationMs = Math.round(performance.now() - startedAt);
+    locationLog("reverse_geocode_response", { status: response.status, ok: response.ok, durationMs });
+    if (!response.ok) throw new Error(`reverse-geocoding-http-${response.status}`);
+    const result = await response.json() as ReverseAddress;
+    locationLog("reverse_geocode_succeeded", {
+      durationMs,
+      displayName: result.display_name || null,
+      addressParts: result.address || null,
+    });
+    return { result, httpStatus: response.status, durationMs };
   };
 
-  const uploadConsentedLocation = async (location: { city: string; address: string; latitude: number; longitude: number; accuracy: number }) => {
+  const uploadConsentedLocation = async (
+    location: { city: string; address: string; latitude: number; longitude: number; accuracy: number },
+    addressResolution: AddressResolutionDiagnostics,
+  ) => {
     let deviceId = localStorage.getItem("shenxiang_device_id");
     if (!deviceId) {
       deviceId = crypto.randomUUID();
       localStorage.setItem("shenxiang_device_id", deviceId);
     }
+    const startedAt = performance.now();
+    locationLog("upload_started", { ...location, requestId: addressResolution.requestId, addressResolution });
     const response = await fetchWithTimeout("/api/location", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...location, deviceId, consent: true }),
+      body: JSON.stringify({ ...location, deviceId, consent: true, addressResolution }),
     }, 8000);
-    if (!response.ok) throw new Error("location-upload-failed");
+    const durationMs = Math.round(performance.now() - startedAt);
+    locationLog("upload_response", { requestId: addressResolution.requestId, status: response.status, ok: response.ok, durationMs });
+    if (!response.ok) throw new Error(`location-upload-http-${response.status}`);
   };
 
   const requestDetailedLocation = () => {
+    const requestId = crypto.randomUUID();
+    const locationStartedAt = performance.now();
+    locationLog("geolocation_requested", { requestId, mode: "initial", timeoutMs: 12000, hardTimeoutMs: 15000 });
     if (!navigator.geolocation) {
+      locationLog("geolocation_unsupported", { requestId });
       return;
     }
     let requestActive = true;
     const locationTimeoutId = window.setTimeout(() => {
       requestActive = false;
+      locationLog("geolocation_hard_timeout", { requestId, durationMs: Math.round(performance.now() - locationStartedAt) });
     }, 15000);
     navigator.geolocation.getCurrentPosition(
       async (position) => {
@@ -172,16 +210,35 @@ export default function Home() {
         window.clearTimeout(locationTimeoutId);
         setGate("closed");
         const { latitude, longitude, accuracy } = position.coords;
+        locationLog("geolocation_succeeded", {
+          requestId,
+          latitude,
+          longitude,
+          accuracy,
+          durationMs: Math.round(performance.now() - locationStartedAt),
+          positionTimestamp: position.timestamp,
+        });
         let resolvedAddress = "地址名称暂时解析失败，已保存定位坐标";
         let resolvedCity = city;
+        const reverseStartedAt = performance.now();
+        let addressResolution: AddressResolutionDiagnostics;
         try {
-          const result = await reverseGeocode(latitude, longitude);
+          const { result, httpStatus, durationMs } = await reverseGeocode(latitude, longitude);
           const parts = result.address || {};
           resolvedCity = parts.city || parts.municipality || parts.town || parts.county || parts.state || city;
           resolvedAddress = result.display_name || `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
-        } catch { /* upload coordinates even when reverse geocoding is temporarily unavailable */ }
+          addressResolution = { requestId, status: "success", durationMs, httpStatus };
+        } catch (error) {
+          addressResolution = {
+            requestId,
+            status: "failed",
+            durationMs: Math.round(performance.now() - reverseStartedAt),
+            error: errorDescription(error),
+          };
+          locationLog("reverse_geocode_failed", { ...addressResolution, latitude, longitude });
+        }
         try {
-          await uploadConsentedLocation({ city: resolvedCity, address: resolvedAddress, latitude, longitude, accuracy });
+          await uploadConsentedLocation({ city: resolvedCity, address: resolvedAddress, latitude, longitude, accuracy }, addressResolution);
           const consentExpiresAt = Date.now() + LOCATION_CONSENT_TTL_MS;
           localStorage.setItem(LOCATION_CONSENT_EXPIRES_KEY, String(consentExpiresAt));
           localStorage.setItem("shenxiang_location", JSON.stringify({
@@ -199,7 +256,8 @@ export default function Home() {
           setHasLocation(true);
           setLocationConsentExpiresAt(consentExpiresAt);
           setGate("closed");
-        } catch {
+        } catch (error) {
+          locationLog("upload_failed", { requestId, error: errorDescription(error) });
           // Location collection is best-effort and never blocks content access.
         }
       },
@@ -207,7 +265,12 @@ export default function Home() {
         if (!requestActive) return;
         requestActive = false;
         window.clearTimeout(locationTimeoutId);
-        void error;
+        locationLog("geolocation_failed", {
+          requestId,
+          code: error.code,
+          message: error.message,
+          durationMs: Math.round(performance.now() - locationStartedAt),
+        });
       },
       { enableHighAccuracy: false, timeout: 12000, maximumAge: 60000 }
     );
@@ -218,12 +281,17 @@ export default function Home() {
       saveCityOnly();
       return;
     }
+    const requestId = crypto.randomUUID();
+    const locationStartedAt = performance.now();
+    locationLog("geolocation_requested", { requestId, mode: "member", timeoutMs: 8000, hardTimeoutMs: 12000 });
     if (!navigator.geolocation) {
+      locationLog("geolocation_unsupported", { requestId });
       return;
     }
     let requestActive = true;
     const locationTimeoutId = window.setTimeout(() => {
       requestActive = false;
+      locationLog("geolocation_hard_timeout", { requestId, durationMs: Math.round(performance.now() - locationStartedAt) });
     }, 12000);
     navigator.geolocation.getCurrentPosition(
       async (position) => {
@@ -234,17 +302,37 @@ export default function Home() {
         setRegistered(true);
         setGate("closed");
         const { latitude, longitude, accuracy } = position.coords;
+        locationLog("geolocation_succeeded", {
+          requestId,
+          latitude,
+          longitude,
+          accuracy,
+          durationMs: Math.round(performance.now() - locationStartedAt),
+          positionTimestamp: position.timestamp,
+        });
         let resolvedAddress = "地址名称暂时解析失败，已保存定位坐标";
         let resolvedCity = city;
+        const reverseStartedAt = performance.now();
+        let addressResolution: AddressResolutionDiagnostics;
         try {
-          const result = await reverseGeocode(latitude, longitude);
+          const { result, httpStatus, durationMs } = await reverseGeocode(latitude, longitude);
           const parts = result.address || {};
           resolvedCity = parts.city || parts.municipality || parts.town || parts.county || parts.state || city;
           resolvedAddress = result.display_name || resolvedAddress;
-        } catch { /* coordinates remain available when address lookup is temporarily unavailable */ }
+          addressResolution = { requestId, status: "success", durationMs, httpStatus };
+        } catch (error) {
+          addressResolution = {
+            requestId,
+            status: "failed",
+            durationMs: Math.round(performance.now() - reverseStartedAt),
+            error: errorDescription(error),
+          };
+          locationLog("reverse_geocode_failed", { ...addressResolution, latitude, longitude });
+        }
         try {
-          await uploadConsentedLocation({ city: resolvedCity, address: resolvedAddress, latitude, longitude, accuracy });
-        } catch {
+          await uploadConsentedLocation({ city: resolvedCity, address: resolvedAddress, latitude, longitude, accuracy }, addressResolution);
+        } catch (error) {
+          locationLog("upload_failed", { requestId, error: errorDescription(error) });
           return;
         }
         const consentExpiresAt = Date.now() + LOCATION_CONSENT_TTL_MS;
@@ -270,7 +358,12 @@ export default function Home() {
         if (!requestActive) return;
         requestActive = false;
         window.clearTimeout(locationTimeoutId);
-        void error;
+        locationLog("geolocation_failed", {
+          requestId,
+          code: error.code,
+          message: error.message,
+          durationMs: Math.round(performance.now() - locationStartedAt),
+        });
       },
       { enableHighAccuracy: false, timeout: 8000, maximumAge: 300000 }
     );
