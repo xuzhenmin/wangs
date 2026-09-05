@@ -92,9 +92,26 @@ if [[ -z "$NODE_VERSION" ]] || ! node -e 'const [major, minor] = process.version
   exit 1
 fi
 
-if [[ ! -x "$PROJECT_DIR/node_modules/.bin/next" ]]; then
-  echo "首次运行，正在安装依赖…"
+DEPENDENCY_STAMP_FILE="$PROJECT_DIR/.runtime/npm-dependencies.sha256"
+DEPENDENCY_FINGERPRINT="$(node --input-type=module -e '
+  import { createHash } from "node:crypto";
+  import { readFileSync } from "node:fs";
+  const hash = createHash("sha256");
+  for (const filename of ["package.json", "package-lock.json"]) {
+    hash.update(readFileSync(filename));
+  }
+  process.stdout.write(hash.digest("hex"));
+')"
+INSTALLED_FINGERPRINT=""
+if [[ -f "$DEPENDENCY_STAMP_FILE" ]]; then
+  INSTALLED_FINGERPRINT="$(tr -dc 'a-f0-9' < "$DEPENDENCY_STAMP_FILE")"
+fi
+
+if [[ ! -x "$PROJECT_DIR/node_modules/.bin/next" || "$INSTALLED_FINGERPRINT" != "$DEPENDENCY_FINGERPRINT" ]]; then
+  echo "依赖清单有变化，正在安装依赖…"
   npm ci
+  mkdir -p "$(dirname "$DEPENDENCY_STAMP_FILE")"
+  printf '%s\n' "$DEPENDENCY_FINGERPRINT" > "$DEPENDENCY_STAMP_FILE"
 fi
 
 echo "正在构建 Next.js 生产版本…"
