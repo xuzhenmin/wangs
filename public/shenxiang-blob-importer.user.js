@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         深巷 Blob 图片导入助手
 // @namespace    shenxiang.local
-// @version      1.0.0
+// @version      1.0.1
 // @description  将原网页中的 Blob 图片批量发送到深巷内容编辑器
 // @match        http://*/*
 // @match        https://*/*
@@ -19,6 +19,7 @@
 
   const TASK_KEY = "shenxiang-current-image-import-task";
   const BUTTON_ID = "shenxiang-blob-import-button";
+  const MAX_IMAGES_PER_IMPORT = 50;
   const isEditorPage = location.pathname.startsWith("/ops-7q4m/editor");
 
   function activeTask() {
@@ -90,8 +91,8 @@
       alert("当前页面没有可读取的 Blob 图片。请确认这是产生这些图片地址的原网页，并且页面没有刷新。");
       return;
     }
-    if (images.length > 20) {
-      alert("一次最多导入 20 张 Blob 图片。");
+    if (images.length > MAX_IMAGES_PER_IMPORT) {
+      alert(`一次最多导入 ${MAX_IMAGES_PER_IMPORT} 张 Blob 图片。`);
       return;
     }
     if (!confirm(`准备向深巷编辑器发送 ${images.length} 张 Blob 图片，是否继续？`)) return;

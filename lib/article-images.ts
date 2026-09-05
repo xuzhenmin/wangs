@@ -6,7 +6,7 @@ import path from "node:path";
 import { load } from "cheerio";
 
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
-export const MAX_IMAGES_PER_ARTICLE = 20;
+export const MAX_IMAGES_PER_ARTICLE = 50;
 const MAX_REDIRECTS = 3;
 const DOWNLOAD_TIMEOUT_MS = 15_000;
 

@@ -32,6 +32,7 @@ LOCAL_SITE_HOST=0.0.0.0 npm run local:start
 
 文章原始导入图片保存在 `public/uploads/articles/`，不会提交到 Git。添加本站
 水印后的发布图片保存在 `public/article-images/`，会随代码一起提交和部署。
+每篇文章单次最多下载 50 张普通外链图片，Blob 导入任务最多接收 50 张图片。
 
 ## Runtime configuration
 
@@ -150,7 +151,7 @@ ARTICLE_SYNC_SECRET=与远端完全相同的密钥
 同步目标默认必须解析到公网 IP，且不允许 HTTP 重定向。如果两台服务只通过可信内网
 通信，可仅在本地 `.env.local` 中显式配置 `ARTICLE_SYNC_ALLOW_PRIVATE=true`。
 
-同步接口单次最多接收 20 张图片、每张最多 8 MB、请求总体最多 64 MB。Nginx 需要在
+同步接口单次最多接收 50 张图片、每张最多 8 MB、请求总体最多 64 MB。Nginx 需要在
 对应 `server` 或 `location` 中允许上传并延长代理超时，例如：
 
 ```nginx

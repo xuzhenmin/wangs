@@ -6,7 +6,7 @@ import path from "node:path";
 import { load } from "cheerio";
 import type { Article } from "./articles";
 
-const MAX_SYNC_IMAGES = 20;
+export const MAX_SYNC_IMAGES = 50;
 const MAX_SYNC_IMAGE_BYTES = 8 * 1024 * 1024;
 export const MAX_SYNC_REQUEST_BYTES = 64 * 1024 * 1024;
 const SYNC_TIMEOUT_MS = 3 * 60 * 1000;

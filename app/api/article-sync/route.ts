@@ -2,6 +2,7 @@ import { load } from "cheerio";
 import { storeArticleImageBytes, ImageLocalizationError } from "../../../lib/article-images";
 import {
   ArticleSyncValidationError,
+  MAX_SYNC_IMAGES,
   MAX_SYNC_REQUEST_BYTES,
   type ArticleSyncManifestItem,
   validSyncedArticleId,
@@ -31,7 +32,7 @@ function parseManifest(value: FormDataEntryValue | null) {
   } catch {
     throw new ArticleSyncValidationError("图片清单格式无效。");
   }
-  if (!Array.isArray(parsed) || parsed.length > 20) {
+  if (!Array.isArray(parsed) || parsed.length > MAX_SYNC_IMAGES) {
     throw new ArticleSyncValidationError("图片清单数量无效。");
   }
   const manifest = parsed as ArticleSyncManifestItem[];

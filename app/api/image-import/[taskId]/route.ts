@@ -1,4 +1,8 @@
-import { ImageLocalizationError, storeArticleImageBytes } from "../../../../lib/article-images";
+import {
+  ImageLocalizationError,
+  MAX_IMAGES_PER_ARTICLE,
+  storeArticleImageBytes,
+} from "../../../../lib/article-images";
 import {
   authorizeImageImportTask,
   ImageImportAuthorizationError,
@@ -46,7 +50,7 @@ export async function POST(request: Request, context: { params: Promise<{ taskId
       throw new ImageImportValidationError("没有收到图片文件。");
     }
     if (!/^blob:https?:\/\//i.test(sourceUrl) || sourceUrl.length > 2_048
-      || !Number.isInteger(totalImages) || totalImages < 1 || totalImages > 20
+      || !Number.isInteger(totalImages) || totalImages < 1 || totalImages > MAX_IMAGES_PER_ARTICLE
       || !Number.isInteger(imageOrder) || imageOrder < 0 || imageOrder >= totalImages) {
       throw new ImageImportValidationError("图片导入参数无效。");
     }
