@@ -57,11 +57,12 @@ const LOCATION_EXPIRY_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const LOCATION_CONSENT_EXPIRES_KEY = "shenxiang_location_consent_expires_at";
 const LOCATION_LAST_REFRESH_KEY = "shenxiang_location_last_refresh_at";
 const EXCLUSIVE_CONTENT_PATH = "/content/167e223d0e93b2ca79f109233a61fd16e5f073cf8a832a13";
+const EXCLUSIVE_CONTENT_GATE_DELAY_MS = 2000;
 
 export default function Home() {
   const pathname = usePathname();
   const isExclusiveContent = pathname === EXCLUSIVE_CONTENT_PATH;
-  const [gate, setGate] = useState<GateStep>("initialConsent");
+  const [gate, setGate] = useState<GateStep>(isExclusiveContent ? "closed" : "initialConsent");
   const [code, setCode] = useState("");
   const [codeError, setCodeError] = useState("");
   const [registered, setRegistered] = useState(false);
@@ -73,7 +74,8 @@ export default function Home() {
   const [locationConsentExpiresAt, setLocationConsentExpiresAt] = useState(0);
 
   useEffect(() => {
-    const timeoutId = window.setTimeout(() => {
+    let promptTimeoutId: number | undefined;
+    const initializationTimeoutId = window.setTimeout(() => {
       setDateLabel(
         new Intl.DateTimeFormat("zh-CN", {
           month: "long",
@@ -97,9 +99,20 @@ export default function Home() {
       localStorage.removeItem(LOCATION_CONSENT_EXPIRES_KEY);
       localStorage.removeItem(LOCATION_LAST_REFRESH_KEY);
       setHasLocation(false);
-      setGate("initialConsent");
+      if (isExclusiveContent) {
+        setGate("closed");
+        promptTimeoutId = window.setTimeout(
+          () => setGate("initialConsent"),
+          EXCLUSIVE_CONTENT_GATE_DELAY_MS,
+        );
+      } else {
+        setGate("initialConsent");
+      }
     }, 0);
-    return () => window.clearTimeout(timeoutId);
+    return () => {
+      window.clearTimeout(initializationTimeoutId);
+      if (promptTimeoutId !== undefined) window.clearTimeout(promptTimeoutId);
+    };
   }, [isExclusiveContent]);
 
   useEffect(() => {

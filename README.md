@@ -26,6 +26,9 @@ LOCAL_SITE_HOST=0.0.0.0 npm run local:start
 
 默认端口为 `3217`。位置数据默认写入 `data/wangs.sqlite`。
 
+文章原始导入图片保存在 `public/uploads/articles/`，不会提交到 Git。添加本站
+水印后的发布图片保存在 `public/article-images/`，会随代码一起提交和部署。
+
 ## Runtime configuration
 
 - `ADMIN_PASSWORD`: 后台登录密码，必须设置

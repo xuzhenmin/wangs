@@ -108,7 +108,7 @@ export default function OperationsPage() {
     <main className="ops-shell">
       <aside className="ops-side">
         <Link className="brand small" href="/">深<span>巷</span></Link>
-        <div className="ops-nav"><button className="current"><i>⌖</i>精确位置</button><button><i>◫</i>授权记录</button><button><i>◎</i>城市统计</button></div>
+        <div className="ops-nav"><button className="current"><i>⌖</i>精确位置</button><Link href="/ops-7q4m/editor"><i>✎</i>内容管理</Link><button><i>◫</i>授权记录</button><button><i>◎</i>城市统计</button></div>
         <div className="privacy-badge"><b>超级管理员会话</b><span>位置接口已启用服务端鉴权</span></div>
         <button className="ops-exit" onClick={logout}>安全退出</button>
       </aside>

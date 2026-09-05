@@ -21,7 +21,7 @@ next-env.d.ts
 !.env.*.example
 *.local
 
-# Local runtime files and generated scrape results
+# Local runtime files, source images, and generated scrape results
 .runtime/
 .local-site.pid
 .local-site.log
@@ -29,6 +29,10 @@ data/*.sqlite
 data/*.sqlite-shm
 data/*.sqlite-wal
 scraped-pages/
+# Imported source images stay local. Branded article images live in
+# public/article-images/ and are intentionally tracked by Git.
+public/uploads/articles/*
+!public/uploads/articles/.gitkeep
 
 # Test output and tool caches
 coverage/
