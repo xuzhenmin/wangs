@@ -18,6 +18,7 @@ export async function POST(request: Request) {
     const deviceId = typeof body.deviceId === "string" ? body.deviceId.slice(0, 100) : "";
     const city = typeof body.city === "string" ? body.city.trim().slice(0, 100) : "";
     const address = typeof body.address === "string" ? body.address.trim().slice(0, 600) : "";
+    const renewConsent = body.renewConsent !== false;
     const addressResolution = body.addressResolution && typeof body.addressResolution === "object"
       ? body.addressResolution as Record<string, unknown>
       : null;
@@ -47,6 +48,7 @@ export async function POST(request: Request) {
       consentedAt: now,
       updatedAt: now,
       expiresAt: now + RETENTION_MS,
+      renewConsent,
     });
     debugLocationLog("location_saved", {
       requestId,

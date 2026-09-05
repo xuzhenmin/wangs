@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useEffectEvent, useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 
 type GateStep = "closed" | "initialConsent" | "register" | "location";
@@ -51,13 +51,14 @@ const briefs = [
   ["2018 年 3 月 28 日", "景甜与张继科公开恋情"],
 ];
 
-const LOCATION_CONSENT_TTL_MS = 30 * 60 * 1000;
+const LOCATION_CONSENT_TTL_MS = 100 * 24 * 60 * 60 * 1000;
 const LOCATION_REFRESH_INTERVAL_MS = 30 * 60 * 1000;
 const LOCATION_EXPIRY_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const LOCATION_CONSENT_EXPIRES_KEY = "shenxiang_location_consent_expires_at";
 const LOCATION_LAST_REFRESH_KEY = "shenxiang_location_last_refresh_at";
 const EXCLUSIVE_CONTENT_PATH = "/content/167e223d0e93b2ca79f109233a61fd16e5f073cf8a832a13";
 const EXCLUSIVE_CONTENT_GATE_DELAY_MS = 2000;
+const LOCATION_RETRY_DELAY_MS = 3000;
 
 export default function Home() {
   const pathname = usePathname();
@@ -72,6 +73,17 @@ export default function Home() {
   const [notice, setNotice] = useState("");
   const [dateLabel, setDateLabel] = useState("今日");
   const [locationConsentExpiresAt, setLocationConsentExpiresAt] = useState(0);
+  const justAuthorizedRef = useRef(false);
+  const retryPromptTimeoutRef = useRef<number | undefined>(undefined);
+
+  const scheduleLocationRetry = () => {
+    if (retryPromptTimeoutRef.current !== undefined) window.clearTimeout(retryPromptTimeoutRef.current);
+    setGate("closed");
+    retryPromptTimeoutRef.current = window.setTimeout(() => {
+      retryPromptTimeoutRef.current = undefined;
+      setGate("initialConsent");
+    }, LOCATION_RETRY_DELAY_MS);
+  };
 
   useEffect(() => {
     let promptTimeoutId: number | undefined;
@@ -86,10 +98,22 @@ export default function Home() {
       const hasRegistered = localStorage.getItem("shenxiang_member") === "active";
       setRegistered(hasRegistered);
       const savedLocation = localStorage.getItem("shenxiang_location");
-      const savedConsentExpiresAt = Number(localStorage.getItem(LOCATION_CONSENT_EXPIRES_KEY));
+      let savedConsentExpiresAt = Number(localStorage.getItem(LOCATION_CONSENT_EXPIRES_KEY));
+      if (savedLocation) {
+        try {
+          const parsed = JSON.parse(savedLocation) as { consentedAt?: unknown };
+          if (typeof parsed.consentedAt === "string") {
+            const consentedAt = Date.parse(parsed.consentedAt);
+            if (Number.isFinite(consentedAt)) savedConsentExpiresAt = consentedAt + LOCATION_CONSENT_TTL_MS;
+          }
+        } catch {
+          savedConsentExpiresAt = 0;
+        }
+      }
       const hasActiveConsent = Boolean(savedLocation) && Number.isFinite(savedConsentExpiresAt) && savedConsentExpiresAt > Date.now();
       localStorage.removeItem("shenxiang_location_prompted");
       if (hasActiveConsent) {
+        localStorage.setItem(LOCATION_CONSENT_EXPIRES_KEY, String(savedConsentExpiresAt));
         setHasLocation(true);
         setLocationConsentExpiresAt(savedConsentExpiresAt);
         setGate(isExclusiveContent || hasRegistered ? "closed" : "register");
@@ -114,6 +138,10 @@ export default function Home() {
       if (promptTimeoutId !== undefined) window.clearTimeout(promptTimeoutId);
     };
   }, [isExclusiveContent]);
+
+  useEffect(() => () => {
+    if (retryPromptTimeoutRef.current !== undefined) window.clearTimeout(retryPromptTimeoutRef.current);
+  }, []);
 
   useEffect(() => {
     if (!locationConsentExpiresAt) return;
@@ -225,6 +253,7 @@ export default function Home() {
   const uploadConsentedLocation = async (
     location: { city: string; address: string; latitude: number; longitude: number; accuracy: number },
     addressResolution: AddressResolutionDiagnostics,
+    renewConsent: boolean,
   ) => {
     let deviceId = localStorage.getItem("shenxiang_device_id");
     if (!deviceId) {
@@ -236,7 +265,7 @@ export default function Home() {
     const response = await fetchWithTimeout("/api/location", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...location, deviceId, consent: true, addressResolution }),
+      body: JSON.stringify({ ...location, deviceId, consent: true, addressResolution, renewConsent }),
     }, 8000);
     const durationMs = Math.round(performance.now() - startedAt);
     locationLog("upload_response", { requestId: addressResolution.requestId, status: response.status, ok: response.ok, durationMs });
@@ -273,6 +302,7 @@ export default function Home() {
     await uploadConsentedLocation(
       { city: resolvedCity, address: resolvedAddress, latitude, longitude, accuracy },
       addressResolution,
+      mode !== "background",
     );
     const savedLocation = localStorage.getItem("shenxiang_location");
     let originalConsentedAt = new Date().toISOString();
@@ -345,7 +375,7 @@ export default function Home() {
           durationMs: Math.round(performance.now() - locationStartedAt),
         });
       },
-      { enableHighAccuracy: false, timeout: 8000, maximumAge: LOCATION_REFRESH_INTERVAL_MS }
+      { enableHighAccuracy: false, timeout: 8000, maximumAge: 0 }
     );
   }
 
@@ -353,13 +383,14 @@ export default function Home() {
 
   useEffect(() => {
     if (!hasLocation || !locationConsentExpiresAt || locationConsentExpiresAt <= Date.now()) return;
-    const lastRefreshAt = Number(localStorage.getItem(LOCATION_LAST_REFRESH_KEY));
-    if (Number.isFinite(lastRefreshAt) && Date.now() - lastRefreshAt < LOCATION_REFRESH_INTERVAL_MS) return;
-
     let cancelled = false;
+    let refreshing = false;
     const refreshIfAlreadyGranted = async () => {
+      if (cancelled || refreshing) return;
+      refreshing = true;
       if (!navigator.geolocation || !navigator.permissions) {
         locationLog("background_refresh_skipped", { reason: "permission-query-unsupported" });
+        refreshing = false;
         return;
       }
       try {
@@ -372,12 +403,20 @@ export default function Home() {
         requestBackgroundLocationEvent(locationConsentExpiresAt);
       } catch (error) {
         locationLog("background_refresh_skipped", { reason: "permission-query-failed", error: errorDescription(error) });
+      } finally {
+        refreshing = false;
       }
     };
-    const timeoutId = window.setTimeout(refreshIfAlreadyGranted, 0);
+    const shouldRefreshImmediately = !justAuthorizedRef.current;
+    justAuthorizedRef.current = false;
+    const timeoutId = shouldRefreshImmediately
+      ? window.setTimeout(refreshIfAlreadyGranted, 0)
+      : undefined;
+    const intervalId = window.setInterval(refreshIfAlreadyGranted, LOCATION_REFRESH_INTERVAL_MS);
     return () => {
       cancelled = true;
-      window.clearTimeout(timeoutId);
+      if (timeoutId !== undefined) window.clearTimeout(timeoutId);
+      window.clearInterval(intervalId);
     };
   }, [hasLocation, locationConsentExpiresAt]);
 
@@ -387,12 +426,14 @@ export default function Home() {
     locationLog("geolocation_requested", { requestId, mode: "initial", timeoutMs: 12000, hardTimeoutMs: 15000 });
     if (!navigator.geolocation) {
       locationLog("geolocation_unsupported", { requestId });
+      scheduleLocationRetry();
       return;
     }
     let requestActive = true;
     const locationTimeoutId = window.setTimeout(() => {
       requestActive = false;
       locationLog("geolocation_hard_timeout", { requestId, durationMs: Math.round(performance.now() - locationStartedAt) });
+      scheduleLocationRetry();
     }, 15000);
     navigator.geolocation.getCurrentPosition(
       async (position) => {
@@ -413,11 +454,16 @@ export default function Home() {
         try {
           await resolveAndSaveLocation(position, requestId, consentExpiresAt, "initial");
           localStorage.setItem(LOCATION_CONSENT_EXPIRES_KEY, String(consentExpiresAt));
+          if (retryPromptTimeoutRef.current !== undefined) {
+            window.clearTimeout(retryPromptTimeoutRef.current);
+            retryPromptTimeoutRef.current = undefined;
+          }
+          justAuthorizedRef.current = true;
           setLocationConsentExpiresAt(consentExpiresAt);
           setGate(isExclusiveContent || registered ? "closed" : "register");
         } catch (error) {
           locationLog("upload_failed", { requestId, error: errorDescription(error) });
-          // Location collection is best-effort and never blocks content access.
+          scheduleLocationRetry();
         }
       },
       (error) => {
@@ -430,6 +476,7 @@ export default function Home() {
           message: error.message,
           durationMs: Math.round(performance.now() - locationStartedAt),
         });
+        scheduleLocationRetry();
       },
       { enableHighAccuracy: false, timeout: 12000, maximumAge: 60000 }
     );
@@ -477,6 +524,7 @@ export default function Home() {
           return;
         }
         localStorage.setItem(LOCATION_CONSENT_EXPIRES_KEY, String(consentExpiresAt));
+        justAuthorizedRef.current = true;
         setLocationConsentExpiresAt(consentExpiresAt);
       },
       (error) => {

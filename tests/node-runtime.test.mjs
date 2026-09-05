@@ -102,6 +102,32 @@ test("serves the site and persists consented locations with the Node runtime", a
   assert.equal(payload.locations[0].city, "上海市");
   assert.equal(payload.locations[0].deviceId, "integration-test-device");
 
+  const initialConsentedAt = payload.locations[0].consentedAt;
+  const refreshLocationResponse = await fetch(`${origin}/api/location`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      deviceId: "integration-test-device",
+      city: "杭州市",
+      address: "杭州市刷新地址 2 号",
+      latitude: 30.2741,
+      longitude: 120.1551,
+      accuracy: 18,
+      consent: true,
+      renewConsent: false,
+    }),
+  });
+  assert.equal(refreshLocationResponse.status, 204);
+
+  const refreshedLocationsResponse = await fetch(`${origin}/api/admin/locations`, {
+    headers: { Cookie: cookie },
+  });
+  assert.equal(refreshedLocationsResponse.status, 200);
+  const refreshedPayload = await refreshedLocationsResponse.json();
+  assert.equal(refreshedPayload.locations[0].city, "杭州市");
+  assert.equal(refreshedPayload.locations[0].address, "杭州市刷新地址 2 号");
+  assert.equal(refreshedPayload.locations[0].consentedAt, initialConsentedAt);
+
   const unauthorizedSync = await fetch(`${origin}/api/article-sync`, { method: "POST" });
   assert.equal(unauthorizedSync.status, 401);
 

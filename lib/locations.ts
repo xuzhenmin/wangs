@@ -11,6 +11,7 @@ export type ConsentedLocation = {
   consentedAt: number;
   updatedAt: number;
   expiresAt: number;
+  renewConsent?: boolean;
 };
 
 export async function saveConsentedLocation(location: ConsentedLocation) {
@@ -24,7 +25,7 @@ export async function saveConsentedLocation(location: ConsentedLocation) {
     latitude = excluded.latitude,
     longitude = excluded.longitude,
     accuracy = excluded.accuracy,
-    consented_at = excluded.consented_at,
+    consented_at = CASE WHEN ? = 1 THEN excluded.consented_at ELSE consented_locations.consented_at END,
     updated_at = excluded.updated_at,
     expires_at = excluded.expires_at`).run(
       location.id,
@@ -36,7 +37,8 @@ export async function saveConsentedLocation(location: ConsentedLocation) {
       location.accuracy,
       location.consentedAt,
       location.updatedAt,
-      location.expiresAt
+      location.expiresAt,
+      location.renewConsent === false ? 0 : 1,
     );
 }
 
