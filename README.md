@@ -117,6 +117,10 @@ after the start command exits.
 `npm ci --no-audit --no-fund --maxsockets=1`。生产构建限制为单个构建工作进程，
 以适配小内存 Linux 服务器。
 
+通过 `scripts/install-node22.sh` 安装项目内置 Node.js 后，直接在终端运行 `npm`
+仍可能调用系统旧版本。手动安装依赖前应按照脚本末尾提示，将
+`.runtime/node/bin` 放到当前终端的 `PATH` 前面。
+
 The page saver respects `robots.txt`, filters common ad containers, and does not
 download images, video, scripts, forms, or watermarks. Run `npm run scrape` without
 a URL for an interactive prompt. Results are written to `scraped-pages/` by default;

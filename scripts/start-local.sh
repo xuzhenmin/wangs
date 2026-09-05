@@ -96,6 +96,9 @@ if [[ ! -x "$PROJECT_DIR/node_modules/.bin/next" ]] || ! npm ls --depth=0 --sile
   echo "项目依赖尚未安装，或与 package.json 不一致。" >&2
   echo "请先手动执行以下命令：" >&2
   echo "  cd $PROJECT_DIR" >&2
+  if [[ -x "$PROJECT_NODE_DIR/node" ]]; then
+    echo "  export PATH=\"$PROJECT_NODE_DIR:\$PATH\"" >&2
+  fi
   echo "  npm ci --no-audit --no-fund --maxsockets=1" >&2
   echo "安装完成后，再次运行当前启动命令。" >&2
   exit 1
