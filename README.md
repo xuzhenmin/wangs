@@ -113,8 +113,8 @@ On macOS, the background process is managed by `launchd`, so it remains availabl
 after the start command exits.
 
 `npm run local:start` 会对比 `package.json` 和 `package-lock.json` 的内容；依赖清单
-发生变化时会自动运行 `npm ci`，避免服务器更新代码后继续使用旧的
-`node_modules`。
+发生变化时会自动以低并发模式运行 `npm ci`，避免服务器更新代码后继续使用旧的
+`node_modules`。生产构建也限制为单个构建工作进程，以适配小内存 Linux 服务器。
 
 The page saver respects `robots.txt`, filters common ad containers, and does not
 download images, video, scripts, forms, or watermarks. Run `npm run scrape` without

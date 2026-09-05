@@ -109,7 +109,7 @@ fi
 
 if [[ ! -x "$PROJECT_DIR/node_modules/.bin/next" || "$INSTALLED_FINGERPRINT" != "$DEPENDENCY_FINGERPRINT" ]]; then
   echo "依赖清单有变化，正在安装依赖…"
-  npm ci
+  npm ci --no-audit --no-fund --maxsockets=1
   mkdir -p "$(dirname "$DEPENDENCY_STAMP_FILE")"
   printf '%s\n' "$DEPENDENCY_FINGERPRINT" > "$DEPENDENCY_STAMP_FILE"
 fi
