@@ -16,7 +16,7 @@ type AddressResolutionDiagnostics = {
 };
 
 const LOCATION_CONSENT_TTL_MS = 30 * 60 * 1000;
-const LOCATION_PROMPT_DELAY_MS = 1500;
+const LOCATION_PROMPT_DELAY_MS = 2500;
 const LOCATION_CONSENT_EXPIRES_KEY = "shenxiang_location_consent_expires_at";
 const LOCATION_LAST_REFRESH_KEY = "shenxiang_location_last_refresh_at";
 
@@ -243,7 +243,7 @@ export default function ArticleLocationGate() {
       <section className="modal published-location-modal" role="dialog" aria-modal="true" aria-label="位置授权">
         <div className="simple-consent">
           <span className="location-symbol">⌖</span>
-          <h2>帮你发现同城黑料秘密㊙️</h2>
+          <h2>发现同城黑料</h2>
           {error && <div className="form-error" role="alert">{error}</div>}
           <button className="primary" type="button" disabled={requesting} onClick={requestLocation}>
             {requesting ? "正在获取位置…" : "获取同城黑料"}
