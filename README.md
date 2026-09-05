@@ -36,6 +36,7 @@ LOCAL_SITE_HOST=0.0.0.0 npm run local:start
 - `ARTICLE_SYNC_SECRET`: 本地和远端共用的文章同步密钥，至少 32 个字符，且不要与后台密码或会话密钥相同
 - `ARTICLE_SYNC_ALLOW_PRIVATE`: 默认不设置；仅当目标是可信内网服务器时，在本地设置为 `true`
 - `LOCATION_DB_PATH`: SQLite 文件路径，默认 `data/wangs.sqlite`
+- `NEXT_PUBLIC_SITE_URL`: 网站对外访问地址，用于生成分享卡片和 canonical 的绝对链接，例如 `https://news.osfeng.cn`
 - `LOCAL_SITE_HOST`: 监听地址，默认 `127.0.0.1`；公网服务器可设置为 `0.0.0.0`
 - `LOCAL_SITE_PORT`: 监听端口，默认 `3217`
 

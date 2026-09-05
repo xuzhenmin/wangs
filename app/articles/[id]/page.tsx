@@ -53,15 +53,47 @@ function safeArticleContent(articleId: string, content: string) {
   });
 }
 
+function firstArticleImage(articleId: string, content: string) {
+  const allowedImagePrefixes = [
+    `/uploads/articles/${articleId}/`,
+    `/article-images/${articleId}/`,
+  ];
+  const imagePattern = /<img\b[^>]*\bsrc\s*=\s*(["'])(.*?)\1/gi;
+  for (const match of content.matchAll(imagePattern)) {
+    const source = match[2]?.trim();
+    if (source && allowedImagePrefixes.some((prefix) => source.startsWith(prefix))) return source;
+  }
+  return "/og.png";
+}
+
 export async function generateMetadata({ params }: ArticlePageProps): Promise<Metadata> {
   const { id } = await params;
   const article = await getPublishedArticle(id);
   if (!article) return { title: "内容不存在｜深巷", robots: { index: false, follow: false } };
+  const shareImage = firstArticleImage(article.id, article.content);
+  const title = `${article.title}｜深巷`;
+  const description = article.summary || article.title;
   return {
-    title: `${article.title}｜深巷`,
-    description: article.summary || article.title,
-    openGraph: { title: `${article.title}｜深巷`, description: article.summary || article.title, type: "article" },
-    twitter: { card: "summary", title: `${article.title}｜深巷`, description: article.summary || article.title },
+    title,
+    description,
+    alternates: { canonical: `/articles/${article.id}` },
+    openGraph: {
+      title,
+      description,
+      type: "article",
+      url: `/articles/${article.id}`,
+      siteName: "深巷",
+      locale: "zh_CN",
+      publishedTime: new Date(article.createdAt).toISOString(),
+      modifiedTime: new Date(article.updatedAt).toISOString(),
+      images: [{ url: shareImage, alt: article.title }],
+    },
+    twitter: {
+      card: "summary_large_image",
+      title,
+      description,
+      images: [shareImage],
+    },
   };
 }
 
