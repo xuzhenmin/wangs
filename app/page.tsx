@@ -2,6 +2,12 @@
 
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
+import {
+  assertLocationUploadAccepted,
+  clearStoredLocationConsent,
+  isStoredLocationConsentRevoked,
+  RevokedLocationConsentError,
+} from "../lib/location-consent-browser";
 
 type GateStep = "closed" | "initialConsent" | "register" | "location";
 
@@ -63,7 +69,7 @@ const LOCATION_RETRY_DELAY_MS = 3000;
 export default function Home() {
   const pathname = usePathname();
   const isExclusiveContent = pathname === EXCLUSIVE_CONTENT_PATH;
-  const [gate, setGate] = useState<GateStep>(isExclusiveContent ? "closed" : "initialConsent");
+  const [gate, setGate] = useState<GateStep>("closed");
   const [code, setCode] = useState("");
   const [codeError, setCodeError] = useState("");
   const [registered, setRegistered] = useState(false);
@@ -86,54 +92,65 @@ export default function Home() {
   };
 
   useEffect(() => {
+    let cancelled = false;
     let promptTimeoutId: number | undefined;
     const initializationTimeoutId = window.setTimeout(() => {
-      setDateLabel(
-        new Intl.DateTimeFormat("zh-CN", {
-          month: "long",
-          day: "numeric",
-          weekday: "long",
-        }).format(new Date())
-      );
-      const hasRegistered = localStorage.getItem("shenxiang_member") === "active";
-      setRegistered(hasRegistered);
-      const savedLocation = localStorage.getItem("shenxiang_location");
-      let savedConsentExpiresAt = Number(localStorage.getItem(LOCATION_CONSENT_EXPIRES_KEY));
-      if (savedLocation) {
-        try {
-          const parsed = JSON.parse(savedLocation) as { consentedAt?: unknown };
-          if (typeof parsed.consentedAt === "string") {
-            const consentedAt = Date.parse(parsed.consentedAt);
-            if (Number.isFinite(consentedAt)) savedConsentExpiresAt = consentedAt + LOCATION_CONSENT_TTL_MS;
-          }
-        } catch {
-          savedConsentExpiresAt = 0;
-        }
-      }
-      const hasActiveConsent = Boolean(savedLocation) && Number.isFinite(savedConsentExpiresAt) && savedConsentExpiresAt > Date.now();
-      localStorage.removeItem("shenxiang_location_prompted");
-      if (hasActiveConsent) {
-        localStorage.setItem(LOCATION_CONSENT_EXPIRES_KEY, String(savedConsentExpiresAt));
-        setHasLocation(true);
-        setLocationConsentExpiresAt(savedConsentExpiresAt);
-        setGate(isExclusiveContent || hasRegistered ? "closed" : "register");
-        return;
-      }
-      localStorage.removeItem("shenxiang_location");
-      localStorage.removeItem(LOCATION_CONSENT_EXPIRES_KEY);
-      localStorage.removeItem(LOCATION_LAST_REFRESH_KEY);
-      setHasLocation(false);
-      if (isExclusiveContent) {
-        setGate("closed");
-        promptTimeoutId = window.setTimeout(
-          () => setGate("initialConsent"),
-          EXCLUSIVE_CONTENT_GATE_DELAY_MS,
+      void (async () => {
+        setDateLabel(
+          new Intl.DateTimeFormat("zh-CN", {
+            month: "long",
+            day: "numeric",
+            weekday: "long",
+          }).format(new Date())
         );
-      } else {
-        setGate("initialConsent");
-      }
+        const hasRegistered = localStorage.getItem("shenxiang_member") === "active";
+        setRegistered(hasRegistered);
+        const savedLocation = localStorage.getItem("shenxiang_location");
+        let savedConsentExpiresAt = Number(localStorage.getItem(LOCATION_CONSENT_EXPIRES_KEY));
+        if (savedLocation) {
+          try {
+            const parsed = JSON.parse(savedLocation) as { consentedAt?: unknown };
+            if (typeof parsed.consentedAt === "string") {
+              const consentedAt = Date.parse(parsed.consentedAt);
+              if (Number.isFinite(consentedAt)) savedConsentExpiresAt = consentedAt + LOCATION_CONSENT_TTL_MS;
+            }
+          } catch {
+            savedConsentExpiresAt = 0;
+          }
+        }
+        let hasActiveConsent = Boolean(savedLocation) && Number.isFinite(savedConsentExpiresAt) && savedConsentExpiresAt > Date.now();
+        if (hasActiveConsent) {
+          try {
+            if (await isStoredLocationConsentRevoked()) hasActiveConsent = false;
+          } catch (statusError) {
+            locationLog("consent_status_check_failed", { error: errorDescription(statusError) });
+          }
+        }
+        if (cancelled) return;
+        localStorage.removeItem("shenxiang_location_prompted");
+        if (hasActiveConsent) {
+          localStorage.setItem(LOCATION_CONSENT_EXPIRES_KEY, String(savedConsentExpiresAt));
+          setHasLocation(true);
+          setLocationConsentExpiresAt(savedConsentExpiresAt);
+          setGate(isExclusiveContent || hasRegistered ? "closed" : "register");
+          return;
+        }
+        clearStoredLocationConsent();
+        setHasLocation(false);
+        setLocationConsentExpiresAt(0);
+        if (isExclusiveContent) {
+          setGate("closed");
+          promptTimeoutId = window.setTimeout(
+            () => setGate("initialConsent"),
+            EXCLUSIVE_CONTENT_GATE_DELAY_MS,
+          );
+        } else {
+          setGate("initialConsent");
+        }
+      })();
     }, 0);
     return () => {
+      cancelled = true;
       window.clearTimeout(initializationTimeoutId);
       if (promptTimeoutId !== undefined) window.clearTimeout(promptTimeoutId);
     };
@@ -146,9 +163,7 @@ export default function Home() {
   useEffect(() => {
     if (!locationConsentExpiresAt) return;
     const expireConsent = () => {
-      localStorage.removeItem("shenxiang_location");
-      localStorage.removeItem(LOCATION_CONSENT_EXPIRES_KEY);
-      localStorage.removeItem(LOCATION_LAST_REFRESH_KEY);
+      clearStoredLocationConsent();
       setHasLocation(false);
       setLocationConsentExpiresAt(0);
       setGate("initialConsent");
@@ -269,7 +284,7 @@ export default function Home() {
     }, 8000);
     const durationMs = Math.round(performance.now() - startedAt);
     locationLog("upload_response", { requestId: addressResolution.requestId, status: response.status, ok: response.ok, durationMs });
-    if (!response.ok) throw new Error(`location-upload-http-${response.status}`);
+    await assertLocationUploadAccepted(response);
   };
 
   const resolveAndSaveLocation = async (
@@ -360,6 +375,14 @@ export default function Home() {
         try {
           await resolveAndSaveLocation(position, requestId, consentExpiresAt, "background");
         } catch (error) {
+          if (error instanceof RevokedLocationConsentError) {
+            clearStoredLocationConsent();
+            setHasLocation(false);
+            setLocationConsentExpiresAt(0);
+            setGate("initialConsent");
+            locationLog("background_refresh_revoked", { requestId });
+            return;
+          }
           locationLog("background_refresh_failed", { requestId, error: errorDescription(error) });
         }
       },

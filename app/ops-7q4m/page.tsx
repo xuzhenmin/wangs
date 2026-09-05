@@ -58,6 +58,8 @@ export default function OperationsPage() {
   const [recordSearch, setRecordSearch] = useState("");
   const [cityFilter, setCityFilter] = useState("全部城市");
   const [refreshing, setRefreshing] = useState(false);
+  const [revokingId, setRevokingId] = useState("");
+  const [successMessage, setSuccessMessage] = useState("");
 
   const loadLocations = useCallback(async () => {
     const response = await fetch("/api/admin/locations", { cache: "no-store" });
@@ -159,6 +161,31 @@ export default function OperationsPage() {
     }
   };
 
+  const revokeConsent = async (location: AdminLocation) => {
+    const confirmed = window.confirm(`确定撤销该设备的位置授权吗？\n\n${location.city} · ${location.address}\n\n撤销后会删除当前记录，用户必须再次点击授权按钮才能恢复位置采集。`);
+    if (!confirmed) return;
+    setRevokingId(location.id);
+    setError("");
+    setSuccessMessage("");
+    try {
+      const response = await fetch(`/api/admin/locations/${location.id}`, { method: "DELETE" });
+      if (response.status === 401) {
+        setUnlocked(false);
+        return;
+      }
+      const data = await response.json().catch(() => null) as { error?: string } | null;
+      if (!response.ok) throw new Error(data?.error || `location-consent-revoke-http-${response.status}`);
+      const remainingLocations = locations.filter((item) => item.id !== location.id);
+      setLocations(remainingLocations);
+      setSelectedId((current) => current === location.id ? remainingLocations[0]?.id || "" : current);
+      setSuccessMessage("授权已撤销；该设备再次访问时需要重新点击授权确认。");
+    } catch {
+      setError("撤销授权失败，请刷新数据后重试。");
+    } finally {
+      setRevokingId("");
+    }
+  };
+
   if (checking) return <main className="ops-login"><div className="ops-login-card"><span className="ops-kicker">PRIVATE OPERATIONS</span><h1>正在验证管理员身份…</h1></div></main>;
 
   if (!unlocked) {
@@ -199,6 +226,7 @@ export default function OperationsPage() {
           <div className="ops-head-actions"><div className="ops-status"><i /> 已安全连接</div><button type="button" disabled={refreshing} onClick={refreshLocations}>{refreshing ? "刷新中…" : "刷新数据"}</button></div>
         </header>
         {error && <div className="ops-inline-error" role="alert">{error}</div>}
+        {successMessage && <div className="ops-inline-success" role="status">{successMessage}</div>}
 
         <div className="metric-grid">
           <div><span>有效授权设备</span><b>{locations.length}</b><small>仅显示服务端保留期内记录</small></div>
@@ -244,7 +272,7 @@ export default function OperationsPage() {
             </div>
             <div className="records-table-wrap">
               <table className="records-table">
-                <thead><tr><th>设备标识</th><th>城市与详细地址</th><th>定位精度</th><th>授权时间</th><th>最近采集</th><th>记录保留至</th><th>状态</th></tr></thead>
+                <thead><tr><th>设备标识</th><th>城市与详细地址</th><th>定位精度</th><th>授权时间</th><th>最近采集</th><th>记录保留至</th><th>状态</th><th>操作</th></tr></thead>
                 <tbody>
                   {filteredRecords.map((location) => (
                     <tr key={location.id} onClick={() => { setSelectedId(location.id); setActiveView("locations"); }}>
@@ -255,6 +283,17 @@ export default function OperationsPage() {
                       <td>{formatDateTime(location.updatedAt)}</td>
                       <td>{formatDateTime(location.expiresAt)}</td>
                       <td><span className="record-active">有效</span></td>
+                      <td>
+                        <button
+                          className="record-revoke"
+                          type="button"
+                          disabled={revokingId === location.id}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void revokeConsent(location);
+                          }}
+                        >{revokingId === location.id ? "撤销中…" : "撤销授权"}</button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>

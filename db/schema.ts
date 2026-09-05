@@ -13,6 +13,11 @@ export const consentedLocations = sqliteTable("consented_locations", {
   expiresAt: integer("expires_at").notNull(),
 }, (table) => [index("consented_locations_expires_idx").on(table.expiresAt)]);
 
+export const revokedLocationConsents = sqliteTable("revoked_location_consents", {
+  deviceId: text("device_id").primaryKey(),
+  revokedAt: integer("revoked_at").notNull(),
+});
+
 export const articles = sqliteTable("articles", {
   id: text("id").primaryKey(),
   title: text("title").notNull(),

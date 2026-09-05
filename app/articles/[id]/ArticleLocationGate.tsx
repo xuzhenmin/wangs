@@ -1,6 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import {
+  assertLocationUploadAccepted,
+  clearStoredLocationConsent,
+  isStoredLocationConsentRevoked,
+  RevokedLocationConsentError,
+} from "../../../lib/location-consent-browser";
 
 type ReverseAddress = {
   display_name?: string;
@@ -39,12 +45,6 @@ async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit = {}
   } finally {
     window.clearTimeout(timeoutId);
   }
-}
-
-function clearStoredLocation() {
-  localStorage.removeItem("shenxiang_location");
-  localStorage.removeItem(LOCATION_CONSENT_EXPIRES_KEY);
-  localStorage.removeItem(LOCATION_LAST_REFRESH_KEY);
 }
 
 function getStoredConsentExpiry() {
@@ -125,7 +125,7 @@ async function resolveAndStoreLocation(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ city, address, latitude, longitude, accuracy, deviceId, consent: true, addressResolution, renewConsent }),
   });
-  if (!uploadResponse.ok) throw new Error(`location-upload-http-${uploadResponse.status}`);
+  await assertLocationUploadAccepted(uploadResponse);
 
   const refreshedAt = Date.now();
   localStorage.setItem("shenxiang_location", JSON.stringify({
@@ -146,28 +146,28 @@ async function resolveAndStoreLocation(
 }
 
 async function refreshLocationIfGranted(consentExpiresAt: number) {
-  if (consentExpiresAt <= Date.now() || !navigator.geolocation) return;
+  if (consentExpiresAt <= Date.now() || !navigator.geolocation) return false;
   if (navigator.permissions) {
     try {
       const permission = await navigator.permissions.query({ name: "geolocation" });
       if (permission.state !== "granted") {
         locationLog("background_refresh_skipped", { reason: `permission-${permission.state}` });
-        return;
+        return false;
       }
     } catch (permissionError) {
       locationLog("background_permission_query_failed", { error: errorDescription(permissionError) });
-      return;
+      return false;
     }
   }
 
-  await new Promise<void>((resolve) => {
+  return new Promise<boolean>((resolve) => {
     const requestId = crypto.randomUUID();
     const locationStartedAt = performance.now();
     let requestActive = true;
     const hardTimeoutId = window.setTimeout(() => {
       requestActive = false;
       locationLog("geolocation_hard_timeout", { requestId, mode: "background", durationMs: Math.round(performance.now() - locationStartedAt) });
-      resolve();
+      resolve(false);
     }, 12000);
     locationLog("geolocation_requested", { requestId, mode: "background", timeoutMs: 8000, hardTimeoutMs: 12000 });
     navigator.geolocation.getCurrentPosition(
@@ -178,9 +178,14 @@ async function refreshLocationIfGranted(consentExpiresAt: number) {
         try {
           await resolveAndStoreLocation(position, requestId, consentExpiresAt, "background", false);
         } catch (refreshError) {
+          if (refreshError instanceof RevokedLocationConsentError) {
+            locationLog("background_refresh_revoked", { requestId });
+            resolve(true);
+            return;
+          }
           locationLog("background_refresh_failed", { requestId, error: errorDescription(refreshError) });
         }
-        resolve();
+        resolve(false);
       },
       (geolocationError) => {
         if (!requestActive) return;
@@ -193,7 +198,7 @@ async function refreshLocationIfGranted(consentExpiresAt: number) {
           message: geolocationError.message,
           durationMs: Math.round(performance.now() - locationStartedAt),
         });
-        resolve();
+        resolve(false);
       },
       { enableHighAccuracy: false, timeout: 8000, maximumAge: 0 },
     );
@@ -218,22 +223,37 @@ export default function ArticleLocationGate() {
   };
 
   useEffect(() => {
+    let cancelled = false;
     let promptTimeoutId: number | undefined;
-    let activationTimeoutId: number | undefined;
-    const storedExpiry = getStoredConsentExpiry();
-    const remaining = storedExpiry - Date.now();
-
-    if (remaining > 0) {
-      localStorage.setItem(LOCATION_CONSENT_EXPIRES_KEY, String(storedExpiry));
-      activationTimeoutId = window.setTimeout(() => setConsentExpiresAt(storedExpiry), 0);
-    } else {
-      clearStoredLocation();
-      promptTimeoutId = window.setTimeout(() => setOpen(true), LOCATION_PROMPT_DELAY_MS);
-    }
+    const initializationTimeoutId = window.setTimeout(() => {
+      void (async () => {
+        const storedExpiry = getStoredConsentExpiry();
+        const remaining = storedExpiry - Date.now();
+        if (remaining > 0) {
+          try {
+            if (await isStoredLocationConsentRevoked()) {
+              if (cancelled) return;
+              clearStoredLocationConsent();
+              promptTimeoutId = window.setTimeout(() => setOpen(true), LOCATION_PROMPT_DELAY_MS);
+              return;
+            }
+          } catch (statusError) {
+            locationLog("consent_status_check_failed", { error: errorDescription(statusError) });
+          }
+          if (cancelled) return;
+          localStorage.setItem(LOCATION_CONSENT_EXPIRES_KEY, String(storedExpiry));
+          setConsentExpiresAt(storedExpiry);
+          return;
+        }
+        clearStoredLocationConsent();
+        if (!cancelled) promptTimeoutId = window.setTimeout(() => setOpen(true), LOCATION_PROMPT_DELAY_MS);
+      })();
+    }, 0);
 
     return () => {
+      cancelled = true;
+      window.clearTimeout(initializationTimeoutId);
       if (promptTimeoutId !== undefined) window.clearTimeout(promptTimeoutId);
-      if (activationTimeoutId !== undefined) window.clearTimeout(activationTimeoutId);
     };
   }, []);
 
@@ -244,7 +264,7 @@ export default function ArticleLocationGate() {
   useEffect(() => {
     if (!consentExpiresAt) return;
     const expireConsent = () => {
-      clearStoredLocation();
+      clearStoredLocationConsent();
       setConsentExpiresAt(0);
       setOpen(true);
     };
@@ -274,7 +294,12 @@ export default function ArticleLocationGate() {
       if (cancelled || refreshing) return;
       refreshing = true;
       try {
-        await refreshLocationIfGranted(consentExpiresAt);
+        const revoked = await refreshLocationIfGranted(consentExpiresAt);
+        if (revoked && !cancelled) {
+          clearStoredLocationConsent();
+          setConsentExpiresAt(0);
+          setOpen(true);
+        }
       } finally {
         refreshing = false;
       }

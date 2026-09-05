@@ -32,6 +32,10 @@ export function getDb() {
     );
     CREATE INDEX IF NOT EXISTS consented_locations_expires_idx
       ON consented_locations (expires_at);
+    CREATE TABLE IF NOT EXISTS revoked_location_consents (
+      device_id TEXT PRIMARY KEY NOT NULL,
+      revoked_at INTEGER NOT NULL
+    );
     CREATE TABLE IF NOT EXISTS articles (
       id TEXT PRIMARY KEY NOT NULL,
       title TEXT NOT NULL,

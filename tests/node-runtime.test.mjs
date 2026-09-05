@@ -128,6 +128,76 @@ test("serves the site and persists consented locations with the Node runtime", a
   assert.equal(refreshedPayload.locations[0].address, "杭州市刷新地址 2 号");
   assert.equal(refreshedPayload.locations[0].consentedAt, initialConsentedAt);
 
+  const locationId = refreshedPayload.locations[0].id;
+  const unauthorizedRevokeResponse = await fetch(`${origin}/api/admin/locations/${locationId}`, { method: "DELETE" });
+  assert.equal(unauthorizedRevokeResponse.status, 401);
+
+  const revokeResponse = await fetch(`${origin}/api/admin/locations/${locationId}`, {
+    method: "DELETE",
+    headers: { Cookie: cookie },
+  });
+  assert.equal(revokeResponse.status, 200);
+  const revokePayload = await revokeResponse.json();
+  assert.equal(revokePayload.revokedConsent.deviceId, "integration-test-device");
+
+  const revokedStatusResponse = await fetch(`${origin}/api/location/consent-status`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ deviceId: "integration-test-device" }),
+  });
+  assert.equal(revokedStatusResponse.status, 200);
+  assert.deepEqual(await revokedStatusResponse.json(), { revoked: true });
+
+  const emptyLocationsResponse = await fetch(`${origin}/api/admin/locations`, { headers: { Cookie: cookie } });
+  assert.equal(emptyLocationsResponse.status, 200);
+  assert.equal((await emptyLocationsResponse.json()).locations.length, 0);
+
+  const rejectedBackgroundRefresh = await fetch(`${origin}/api/location`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      deviceId: "integration-test-device",
+      city: "杭州市",
+      address: "不应重新写入的后台刷新地址",
+      latitude: 30.2741,
+      longitude: 120.1551,
+      accuracy: 18,
+      consent: true,
+      renewConsent: false,
+    }),
+  });
+  assert.equal(rejectedBackgroundRefresh.status, 409);
+  assert.equal((await rejectedBackgroundRefresh.json()).error, "location-consent-revoked");
+
+  const renewedConsentResponse = await fetch(`${origin}/api/location`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      deviceId: "integration-test-device",
+      city: "北京市",
+      address: "北京市重新授权地址 3 号",
+      latitude: 39.9042,
+      longitude: 116.4074,
+      accuracy: 16,
+      consent: true,
+      renewConsent: true,
+    }),
+  });
+  assert.equal(renewedConsentResponse.status, 204);
+
+  const renewedStatusResponse = await fetch(`${origin}/api/location/consent-status`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ deviceId: "integration-test-device" }),
+  });
+  assert.deepEqual(await renewedStatusResponse.json(), { revoked: false });
+
+  const renewedLocationsResponse = await fetch(`${origin}/api/admin/locations`, { headers: { Cookie: cookie } });
+  const renewedLocationsPayload = await renewedLocationsResponse.json();
+  assert.equal(renewedLocationsPayload.locations.length, 1);
+  assert.equal(renewedLocationsPayload.locations[0].city, "北京市");
+  assert.ok(renewedLocationsPayload.locations[0].consentedAt > initialConsentedAt);
+
   const unauthorizedSync = await fetch(`${origin}/api/article-sync`, { method: "POST" });
   assert.equal(unauthorizedSync.status, 401);
 

@@ -108,6 +108,7 @@ footer { background:#1b1d1a; color:#d9d7cf; }.footer-inner { min-height:170px; d
 .ops-head-actions>button:hover:not(:disabled) { border-color:#a63325; color:#a63325; }
 .ops-head-actions>button:disabled { opacity:.55; cursor:wait; }
 .ops-inline-error { margin:-10px 0 16px; padding:11px 14px; border-left:3px solid #a63325; background:#f4dfda; color:#8d2d21; font-size:10px; }
+.ops-inline-success { margin:-10px 0 16px; padding:11px 14px; border-left:3px solid #527b42; background:#e5eedf; color:#416536; font-size:10px; }
 .metric-grid .metric-time { min-height:34px; display:flex; align-items:center; font:700 18px ui-monospace,SFMono-Regular,Menlo,monospace; }
 .ops-data-card { overflow:hidden; border:1px solid #d8d6ce; background:#f7f6f1; }
 .ops-data-head { min-height:78px; padding:0 22px; display:flex; align-items:center; justify-content:space-between; gap:20px; border-bottom:1px solid #d8d6ce; }
@@ -130,6 +131,9 @@ footer { background:#1b1d1a; color:#d9d7cf; }.footer-inner { min-height:170px; d
 .records-table td b { margin-bottom:5px; color:#282823; font-size:11px; }
 .records-table td small { max-width:340px; color:#77766f; line-height:1.5; }
 .record-active { display:inline-block; padding:4px 7px; color:#527b42; background:#e5eedf; font-size:8px; font-weight:800; }
+.record-revoke { white-space:nowrap; border:1px solid #c9a8a1; background:transparent; padding:6px 9px; color:#9b3326; cursor:pointer; font-size:8px; font-weight:800; }
+.record-revoke:hover:not(:disabled) { border-color:#9b3326; background:#f4dfda; }
+.record-revoke:disabled { opacity:.5; cursor:wait; }
 .ops-data-empty { padding:50px 20px; color:#99978f; text-align:center; font-size:10px; }
 .city-summary-list { padding:4px 22px 20px; }
 .city-summary-row { min-height:92px; display:grid; grid-template-columns:34px minmax(220px,1fr) 110px 145px; gap:16px; align-items:center; border-bottom:1px solid #dedcd4; }

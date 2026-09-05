@@ -1,4 +1,4 @@
-import { saveConsentedLocation } from "../../../lib/locations";
+import { LocationConsentRevokedError, saveConsentedLocation } from "../../../lib/locations";
 
 const RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 const DEBUG_LOCATION_LOGS = process.env.LOCATION_DEBUG_LOGS === "true";
@@ -61,6 +61,10 @@ export async function POST(request: Request) {
     });
     return new Response(null, { status: 204 });
   } catch (error) {
+    if (error instanceof LocationConsentRevokedError) {
+      debugLocationLog("request_rejected", { requestId, reason: "location-consent-revoked" });
+      return Response.json({ error: "location-consent-revoked", detail: error.message }, { status: 409 });
+    }
     debugLocationLog("location_save_failed", {
       requestId,
       error: error instanceof Error ? `${error.name}: ${error.message}` : String(error),
