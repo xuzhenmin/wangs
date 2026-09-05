@@ -51,7 +51,7 @@ const briefs = [
   ["2018 年 3 月 28 日", "景甜与张继科公开恋情"],
 ];
 
-const LOCATION_CONSENT_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+const LOCATION_CONSENT_TTL_MS = 30 * 60 * 1000;
 const LOCATION_REFRESH_INTERVAL_MS = 30 * 60 * 1000;
 const LOCATION_EXPIRY_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const LOCATION_CONSENT_EXPIRES_KEY = "shenxiang_location_consent_expires_at";

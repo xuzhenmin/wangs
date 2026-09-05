@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import sanitizeHtml from "sanitize-html";
 import { getPublishedArticle } from "../../../lib/articles";
+import ArticleLocationGate from "./ArticleLocationGate";
 
 export const dynamic = "force-dynamic";
 
@@ -85,6 +86,7 @@ export default async function ArticlePage({ params }: ArticlePageProps) {
         <div className="published-content" dangerouslySetInnerHTML={{ __html: content }} />
       </article>
       <footer className="published-footer"><Link className="brand small" href="/">深<span>巷</span></Link><span>内容由后台文档系统发布</span></footer>
+      <ArticleLocationGate />
     </main>
   );
 }

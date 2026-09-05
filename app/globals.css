@@ -296,6 +296,11 @@ footer { background:#1b1d1a; color:#d9d7cf; }.footer-inner { min-height:170px; d
 .published-footer { min-height:130px; padding:30px 34px; display:flex; align-items:center; justify-content:space-between; gap:20px; border-top:1px solid #2a2a2a; background:#090909; }
 .published-footer .brand { margin:0; }
 .published-footer>span { color:#62625f; font-size:9px; }
+.published-location-backdrop { z-index:40; }
+.published-location-modal { color:#efede7; background:#171717; border:1px solid #333; }
+.published-location-modal .location-symbol { color:#ff9000; background:#242424; }
+.published-location-modal .primary { color:#111; background:#ff9000; border-color:#ff9000; }
+.published-location-modal .form-error { margin:14px 0 0; color:#ffb3a8; background:#b7382822; }
 @media (max-width:600px) {
   .published-header { min-height:76px; padding:0 20px; }
   .published-article { padding:52px 22px 72px; }
