@@ -60,6 +60,20 @@ export async function getPublishedArticle(id: string) {
   LIMIT 1`).get(id) as unknown as Article | undefined;
 }
 
+export function getArticle(id: string) {
+  return getDb().prepare(`SELECT
+    id,
+    title,
+    summary,
+    content,
+    status,
+    created_at AS createdAt,
+    updated_at AS updatedAt
+  FROM articles
+  WHERE id = ?
+  LIMIT 1`).get(id) as unknown as Article | undefined;
+}
+
 export function articleExists(id: string) {
   return Boolean(getDb().prepare("SELECT id FROM articles WHERE id = ? LIMIT 1").get(id));
 }
@@ -121,4 +135,40 @@ export async function updateArticle(id: string, input: ArticleInput) {
     updated_at AS updatedAt
   FROM articles WHERE id = ?`).get(id) as unknown as Article;
   return { article };
+}
+
+export function upsertSyncedArticle(
+  id: string,
+  input: ArticleInput,
+  timestamps: { createdAt: number; updatedAt: number },
+) {
+  if (input.status !== "published" || hasPendingArticleImages(input.content)) {
+    throw new ExternalImagesPendingError();
+  }
+  const database = getDb();
+  database.prepare(`INSERT INTO articles (
+    id, title, summary, content, status, created_at, updated_at
+  ) VALUES (?, ?, ?, ?, 'published', ?, ?)
+  ON CONFLICT(id) DO UPDATE SET
+    title = excluded.title,
+    summary = excluded.summary,
+    content = excluded.content,
+    status = 'published',
+    updated_at = excluded.updated_at`).run(
+    id,
+    input.title,
+    input.summary,
+    input.content,
+    timestamps.createdAt,
+    timestamps.updatedAt,
+  );
+  return database.prepare(`SELECT
+    id,
+    title,
+    summary,
+    content,
+    status,
+    created_at AS createdAt,
+    updated_at AS updatedAt
+  FROM articles WHERE id = ?`).get(id) as unknown as Article;
 }

@@ -34,6 +34,13 @@ type ImageImportProgress = {
   failedImages: number;
 };
 
+type RemoteSyncResult = {
+  status: "synced" | "failed";
+  articleUrl?: string;
+  uploadedImageCount?: number;
+  detail?: string;
+};
+
 const emptyDraft: Draft = { title: "", summary: "", content: "", status: "draft" };
 
 function articleDraft(article: Article): Draft {
@@ -99,6 +106,10 @@ export default function ContentEditorPage() {
   const [activeImageImport, setActiveImageImport] = useState<ActiveImageImport | null>(null);
   const [imageImportProgress, setImageImportProgress] = useState<ImageImportProgress | null>(null);
   const [message, setMessage] = useState("");
+  const [syncArticle, setSyncArticle] = useState<Article | null>(null);
+  const [remoteServer, setRemoteServer] = useState("");
+  const [syncingRemote, setSyncingRemote] = useState(false);
+  const [remoteSyncResult, setRemoteSyncResult] = useState<RemoteSyncResult | null>(null);
 
   const activeArticle = useMemo(
     () => articles.find((article) => article.id === activeId) || null,
@@ -269,13 +280,63 @@ export default function ContentEditorPage() {
       setActiveId(savedArticle.id);
       setDraft(articleDraft(savedArticle));
       const savedMessage = status === "published"
-        ? "内容已发布，可从左侧打开真实内容页。"
+        ? "内容已发布到本地；需要上传远端时，请点击左侧文档上的上传图标。"
         : activeId ? "草稿修改已保存。" : "草稿已创建。";
       setMessage(savedMessage);
     } catch {
       setMessage("保存失败，请稍后重试。");
     } finally {
       setSavingStatus(null);
+    }
+  };
+
+  const openRemoteSync = (article: Article) => {
+    setSyncArticle(article);
+    setRemoteSyncResult(null);
+    const previousServer = window.localStorage.getItem("shenxiang_remote_server") || "";
+    setRemoteServer(previousServer);
+  };
+
+  const closeRemoteSync = () => {
+    if (syncingRemote) return;
+    setSyncArticle(null);
+    setRemoteSyncResult(null);
+  };
+
+  const uploadToRemote = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!syncArticle || syncingRemote) return;
+    if (!remoteServer.trim()) {
+      setRemoteSyncResult({ status: "failed", detail: "请输入远端服务器网址或公网 IP。" });
+      return;
+    }
+    setSyncingRemote(true);
+    setRemoteSyncResult(null);
+    try {
+      const response = await fetch(`/api/admin/articles/${syncArticle.id}/sync`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ remoteServer: remoteServer.trim() }),
+      });
+      if (response.status === 401) {
+        setSyncArticle(null);
+        setUnlocked(false);
+        return;
+      }
+      const data = await response.json() as { remoteSync?: RemoteSyncResult; detail?: string };
+      if (data.remoteSync?.status === "synced") {
+        window.localStorage.setItem("shenxiang_remote_server", remoteServer.trim());
+        setRemoteSyncResult(data.remoteSync);
+      } else {
+        setRemoteSyncResult({
+          status: "failed",
+          detail: data.remoteSync?.detail || data.detail || `远端上传失败（HTTP ${response.status}）。`,
+        });
+      }
+    } catch {
+      setRemoteSyncResult({ status: "failed", detail: "上传请求失败，请检查本地服务和网络连接。" });
+    } finally {
+      setSyncingRemote(false);
     }
   };
 
@@ -414,6 +475,15 @@ export default function ContentEditorPage() {
             <div className="document-list">
               {articles.map((article) => (
                 <div key={article.id} className={`document-list-item${article.id === activeId ? " active" : ""}`}>
+                  {article.status === "published" && (
+                    <button
+                      className="document-sync-button"
+                      type="button"
+                      title="上传到远端服务器"
+                      aria-label={`上传《${article.title}》到远端服务器`}
+                      onClick={() => openRemoteSync(article)}
+                    >⇧</button>
+                  )}
                   <button className="document-select" onClick={() => selectArticle(article)}>
                     <span className={`article-state ${article.status}`}>{article.status === "published" ? "已发布" : "草稿"}</span>
                     <b>{article.title}</b>
@@ -499,6 +569,44 @@ export default function ContentEditorPage() {
           </form>
         </div>
       </section>
+      {syncArticle && (
+        <div className="modal-backdrop article-sync-backdrop">
+          <section className="modal article-sync-modal" role="dialog" aria-modal="true" aria-labelledby="article-sync-title">
+            <button className="modal-close" type="button" aria-label="关闭" disabled={syncingRemote} onClick={closeRemoteSync}>×</button>
+            <span className="modal-index">REMOTE PUBLISH</span>
+            <h2 id="article-sync-title">上传到远端服务器</h2>
+            <p>《{syncArticle.title}》已在本地正式发布。确认后将上传文章正文及其中引用的全部本地图片。</p>
+            <form onSubmit={uploadToRemote}>
+              <label>
+                远端服务器网址或公网 IP
+                <input
+                  autoFocus
+                  value={remoteServer}
+                  onChange={(event) => setRemoteServer(event.target.value)}
+                  placeholder="https://example.com 或 http://公网IP:端口"
+                  disabled={syncingRemote}
+                />
+              </label>
+              <small className="article-sync-hint">填写网站根地址即可；系统会自动使用 /api/article-sync。域名默认使用 HTTPS，纯 IP 默认使用 HTTP。</small>
+              {remoteSyncResult && (
+                <div className={`article-sync-result ${remoteSyncResult.status}`}>
+                  <b>{remoteSyncResult.status === "synced" ? "上传成功" : "上传失败"}</b>
+                  <span>
+                    {remoteSyncResult.status === "synced"
+                      ? `文章和 ${remoteSyncResult.uploadedImageCount || 0} 张图片已写入远端。`
+                      : remoteSyncResult.detail || "未知错误。"}
+                  </span>
+                  {remoteSyncResult.articleUrl && <a href={remoteSyncResult.articleUrl} target="_blank" rel="noreferrer">打开远端内容页 ↗</a>}
+                </div>
+              )}
+              <div className="article-sync-actions">
+                <button className="secondary" type="button" disabled={syncingRemote} onClick={closeRemoteSync}>取消</button>
+                <button className="primary" type="submit" disabled={syncingRemote}>{syncingRemote ? "正在上传…" : remoteSyncResult?.status === "synced" ? "重新上传" : "确认上传"}</button>
+              </div>
+            </form>
+          </section>
+        </div>
+      )}
     </main>
   );
 }

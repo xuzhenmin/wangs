@@ -33,6 +33,8 @@ LOCAL_SITE_HOST=0.0.0.0 npm run local:start
 
 - `ADMIN_PASSWORD`: 后台登录密码，必须设置
 - `ADMIN_SESSION_SECRET`: 会话签名密钥，必须设置为足够长的随机值
+- `ARTICLE_SYNC_SECRET`: 本地和远端共用的文章同步密钥，至少 32 个字符，且不要与后台密码或会话密钥相同
+- `ARTICLE_SYNC_ALLOW_PRIVATE`: 默认不设置；仅当目标是可信内网服务器时，在本地设置为 `true`
 - `LOCATION_DB_PATH`: SQLite 文件路径，默认 `data/wangs.sqlite`
 - `LOCAL_SITE_HOST`: 监听地址，默认 `127.0.0.1`；公网服务器可设置为 `0.0.0.0`
 - `LOCAL_SITE_PORT`: 监听端口，默认 `3217`
@@ -120,6 +122,37 @@ after the start command exits.
 通过 `scripts/install-node22.sh` 安装项目内置 Node.js 后，直接在终端运行 `npm`
 仍可能调用系统旧版本。手动安装依赖前应按照脚本末尾提示，将
 `.runtime/node/bin` 放到当前终端的 `PATH` 前面。
+
+## 本地发布同步到远端
+
+远端服务器的 `.env` 只需配置接收密钥：
+
+```env
+ARTICLE_SYNC_SECRET=使用-openssl-rand-hex-32-生成的独立密钥
+```
+
+本地服务的 `.env.local` 配置相同密钥：
+
+```env
+ARTICLE_SYNC_SECRET=与远端完全相同的密钥
+```
+
+“发布内容”或“发布更新”只保存到本地，不会连接远端。文章正式发布后，“全部文档”
+列表会出现上传图标；点击图标，在弹窗中输入远端网站根地址或公网 IP 并确认，文章正文
+和当前文章引用的本地图片才会上传。远端接口会按文章 ID 新增或更新内容，并将接收到的
+图片保存到 `public/uploads/articles/`。弹窗会显示上传成功链接，或显示失败原因。
+
+同步目标默认必须解析到公网 IP，且不允许 HTTP 重定向。如果两台服务只通过可信内网
+通信，可仅在本地 `.env.local` 中显式配置 `ARTICLE_SYNC_ALLOW_PRIVATE=true`。
+
+同步接口单次最多接收 20 张图片、每张最多 8 MB、请求总体最多 64 MB。Nginx 需要在
+对应 `server` 或 `location` 中允许上传并延长代理超时，例如：
+
+```nginx
+client_max_body_size 64m;
+proxy_read_timeout 240s;
+proxy_send_timeout 240s;
+```
 
 The page saver respects `robots.txt`, filters common ad containers, and does not
 download images, video, scripts, forms, or watermarks. Run `npm run scrape` without

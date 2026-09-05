@@ -114,10 +114,12 @@ footer { background:#1b1d1a; color:#d9d7cf; }.footer-inner { min-height:170px; d
 .document-list-card,.editor-card { background:#f7f6f1; border:1px solid #d8d6ce; }
 .document-list-card { position:sticky; top:38px; overflow:hidden; }
 .document-list { max-height:calc(100vh - 190px); overflow:auto; }
-.document-list-item { border-bottom:1px solid #dedcd4; }
+.document-list-item { position:relative; border-bottom:1px solid #dedcd4; }
 .document-list-item:hover,.document-list-item.active { background:#eeece5; }
 .document-list-item.active { box-shadow:inset 3px 0 0 var(--red); }
-.document-select { width:100%; border:0; background:transparent; padding:17px 18px 10px; text-align:left; cursor:pointer; }
+.document-select { width:100%; border:0; background:transparent; padding:17px 50px 10px 18px; text-align:left; cursor:pointer; }
+.document-sync-button { position:absolute; z-index:2; top:13px; right:14px; width:27px; height:27px; display:grid; place-items:center; border:1px solid #b8b5aa; border-radius:50%; background:#fff; color:#a63325; cursor:pointer; font-size:15px; font-weight:900; line-height:1; }
+.document-sync-button:hover { border-color:#a63325; background:#a63325; color:#fff; }
 .document-list b,.document-list small,.document-list time { display:block; }
 .document-list b { margin:9px 0 7px; font-family:"Songti SC",serif; font-size:14px; line-height:1.4; }
 .document-list small { color:#77766f; font-size:9px; line-height:1.5; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
@@ -210,6 +212,18 @@ footer { background:#1b1d1a; color:#d9d7cf; }.footer-inner { min-height:170px; d
 .editor-savebar .save-draft-button { border:1px solid #bbb8ae; background:#fff; color:#55544e; }
 .editor-savebar .publish-button { min-width:108px; background:#b73828; color:#fff; }
 .save-message { color:#527b42; font-size:10px; }.save-message.error { color:#a52f22; }
+.article-sync-backdrop { z-index:60; }
+.article-sync-modal { width:min(540px,100%); }
+.article-sync-modal form { margin-top:22px; }
+.article-sync-hint { display:block; margin-top:9px; color:#8b8981; font-size:9px; line-height:1.6; }
+.article-sync-result { margin-top:17px; padding:13px 14px; border:1px solid #c7d2bd; background:#edf3e8; color:#46623c; }
+.article-sync-result.failed { border-color:#dfb9b3; background:#f8e9e6; color:#992f22; }
+.article-sync-result b,.article-sync-result span,.article-sync-result a { display:block; }
+.article-sync-result b { margin-bottom:5px; font-size:11px; }
+.article-sync-result span { font-size:10px; line-height:1.55; }
+.article-sync-result a { width:max-content; margin-top:9px; color:#a63325; font-size:10px; font-weight:900; text-underline-offset:3px; }
+.article-sync-actions { display:flex; gap:9px; margin-top:18px; }
+.article-sync-actions .primary,.article-sync-actions .secondary { flex:1; margin:0; }
 
 @media (max-width:1100px) {
   .editor-layout { grid-template-columns:220px minmax(0,1fr); }
