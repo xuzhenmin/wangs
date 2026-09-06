@@ -5,7 +5,9 @@ import ArticleContentDisclosure from "./ArticleContentDisclosure";
 import {
   assertLocationUploadAccepted,
   clearStoredLocationConsent,
+  getStoredLocationConsentExpiry,
   isStoredLocationConsentRevoked,
+  rememberLocationConsent,
   LOCATION_PERMISSION_DENIED_MESSAGE,
   RevokedLocationConsentError,
 } from "../../../lib/location-consent-browser";
@@ -47,24 +49,6 @@ async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit = {}
   } finally {
     window.clearTimeout(timeoutId);
   }
-}
-
-function getStoredConsentExpiry() {
-  const savedLocation = localStorage.getItem("shenxiang_location");
-  const savedExpiry = Number(localStorage.getItem(LOCATION_CONSENT_EXPIRES_KEY));
-  if (!savedLocation || !Number.isFinite(savedExpiry)) return 0;
-
-  try {
-    const parsed = JSON.parse(savedLocation) as { consentedAt?: unknown };
-    if (typeof parsed.consentedAt === "string") {
-      const consentedAt = Date.parse(parsed.consentedAt);
-      if (Number.isFinite(consentedAt)) return consentedAt + LOCATION_CONSENT_TTL_MS;
-    }
-  } catch {
-    return 0;
-  }
-
-  return savedExpiry;
 }
 
 async function resolveAndStoreLocation(
@@ -149,17 +133,19 @@ async function resolveAndStoreLocation(
 
 async function refreshLocationIfGranted(consentExpiresAt: number) {
   if (consentExpiresAt <= Date.now() || !navigator.geolocation) return false;
-  if (navigator.permissions) {
-    try {
-      const permission = await navigator.permissions.query({ name: "geolocation" });
-      if (permission.state !== "granted") {
-        locationLog("background_refresh_skipped", { reason: `permission-${permission.state}` });
-        return false;
-      }
-    } catch (permissionError) {
-      locationLog("background_permission_query_failed", { error: errorDescription(permissionError) });
+  if (!navigator.permissions) {
+    locationLog("background_refresh_skipped", { reason: "permission-query-unsupported" });
+    return false;
+  }
+  try {
+    const permission = await navigator.permissions.query({ name: "geolocation" });
+    if (permission.state !== "granted") {
+      locationLog("background_refresh_skipped", { reason: `permission-${permission.state}` });
       return false;
     }
+  } catch (permissionError) {
+    locationLog("background_permission_query_failed", { error: errorDescription(permissionError) });
+    return false;
   }
 
   return new Promise<boolean>((resolve) => {
@@ -260,7 +246,7 @@ export default function ArticleLocationGate({ content }: { content: string }) {
     let cancelled = false;
     const initializationTimeoutId = window.setTimeout(() => {
       void (async () => {
-        const storedExpiry = getStoredConsentExpiry();
+        const storedExpiry = getStoredLocationConsentExpiry();
         const remaining = storedExpiry - Date.now();
         if (remaining > 0) {
           try {
@@ -306,13 +292,16 @@ export default function ArticleLocationGate({ content }: { content: string }) {
       // A grant enables the explicit expand action; it never expands or
       // starts a location upload by itself.
       const granted = permission.state === "granted";
-      setCanExpand(granted);
+      const hasActiveConsent = getStoredLocationConsentExpiry() > Date.now();
+      setCanExpand(granted || (permission.state === "prompt" && hasActiveConsent));
       setPermissionDenied(permission.state === "denied");
       setRequestError("");
-      if (!granted) {
+      if (permission.state === "denied") {
         setCollapsed(true);
         clearStoredLocationConsent();
         setConsentExpiresAt(0);
+      } else if (!granted && !hasActiveConsent) {
+        setCollapsed(true);
       }
     };
     const checkPermission = async () => {
@@ -453,6 +442,13 @@ export default function ArticleLocationGate({ content }: { content: string }) {
         window.clearTimeout(hardTimeoutId);
         const consentExpiresAt = Date.now() + LOCATION_CONSENT_TTL_MS;
         const { latitude, longitude, accuracy } = position.coords;
+        try {
+          rememberLocationConsent(consentExpiresAt);
+        } catch (storageError) {
+          locationLog("consent_storage_failed", { error: errorDescription(storageError) });
+        }
+        justAuthorizedRef.current = true;
+        setConsentExpiresAt(consentExpiresAt);
 
         // Enable manual expansion on a successful browser grant. Saving the
         // address is independent of whether the visitor chooses to expand.
@@ -478,8 +474,6 @@ export default function ArticleLocationGate({ content }: { content: string }) {
             window.clearTimeout(retryPromptTimeoutRef.current);
             retryPromptTimeoutRef.current = undefined;
           }
-          justAuthorizedRef.current = true;
-          setConsentExpiresAt(consentExpiresAt);
           setOpen(false);
         } catch (uploadError) {
           locationLog("upload_failed", { requestId, mode: "article", error: errorDescription(uploadError) });
@@ -530,8 +524,10 @@ export default function ArticleLocationGate({ content }: { content: string }) {
           {!canExpand && <p id="article-location-settings">授权定位后，平台会解析并保存位置信息。若已拒绝，请在浏览器的网站设置中允许位置访问后重试。</p>}
           {requestError && <p className="published-location-error" id="article-location-inline-error" role="alert">{requestError}</p>}
           <button
-            className="primary published-location-action"
+            className={canExpand ? "published-content-expand" : "primary published-location-action"}
             type="button"
+            aria-label={canExpand ? "展开" : undefined}
+            title={canExpand ? "展开阅读全文" : undefined}
             disabled={requesting && !canExpand}
             aria-busy={requesting && !canExpand}
             aria-expanded={false}
@@ -539,7 +535,11 @@ export default function ArticleLocationGate({ content }: { content: string }) {
             aria-describedby={[!canExpand && "article-location-settings", requestError && "article-location-inline-error"].filter(Boolean).join(" ") || undefined}
             onClick={canExpand ? expandContent : requestLocation}
           >
-            {canExpand ? "展开" : requesting ? "正在获取位置…" : permissionDenied ? "重新获取位置" : "授权位置"}
+            {canExpand ? (
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+                <path d="m6 7 6 6 6-6M6 13l6 6 6-6" />
+              </svg>
+            ) : requesting ? "正在获取位置…" : permissionDenied ? "重新获取位置" : "授权位置"}
           </button>
         </section>
       )}

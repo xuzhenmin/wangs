@@ -354,6 +354,9 @@ footer { background:#1b1d1a; color:#d9d7cf; }.footer-inner { min-height:170px; d
 .published-content-unlock { padding:26px 20px; text-align:center; border:1px solid #343434; border-radius:8px; background:#191919; }
 .published-content-unlock>p { margin:0 0 16px; font-size:15px; line-height:1.8; }
 .published-content-unlock #article-location-settings { color:#aaa69e; font-size:13px; }
+.published-content-expand { display:inline-flex; align-items:center; justify-content:center; width:52px; height:52px; padding:0; border:1px solid #80541e; border-radius:50%; background:#282014; color:#ffad42; cursor:pointer; transition:background .15s,border-color .15s; }
+.published-content-expand:hover { background:#3b2c17; border-color:#ffad42; }
+.published-content-expand:focus-visible { outline:2px solid #ffad42; outline-offset:4px; }
 .published-content h1,.published-content h2,.published-content h3 { color:#f2efe8; line-height:1.4; }
 .published-content h1 { margin:52px 0 22px; font-size:36px; }.published-content h2 { margin:46px 0 20px; font-size:29px; }.published-content h3 { margin:40px 0 18px; font-size:23px; }
 .published-content p { margin:0 0 22px; }

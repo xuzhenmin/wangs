@@ -6,7 +6,9 @@ import WechatShare from "./WechatShare";
 import {
   assertLocationUploadAccepted,
   clearStoredLocationConsent,
+  getStoredLocationConsentExpiry,
   isStoredLocationConsentRevoked,
+  rememberLocationConsent,
   LOCATION_PERMISSION_DENIED_MESSAGE,
   RevokedLocationConsentError,
 } from "../lib/location-consent-browser";
@@ -109,20 +111,8 @@ export default function Home() {
         );
         const hasRegistered = localStorage.getItem("shenxiang_member") === "active";
         setRegistered(hasRegistered);
-        const savedLocation = localStorage.getItem("shenxiang_location");
-        let savedConsentExpiresAt = Number(localStorage.getItem(LOCATION_CONSENT_EXPIRES_KEY));
-        if (savedLocation) {
-          try {
-            const parsed = JSON.parse(savedLocation) as { consentedAt?: unknown };
-            if (typeof parsed.consentedAt === "string") {
-              const consentedAt = Date.parse(parsed.consentedAt);
-              if (Number.isFinite(consentedAt)) savedConsentExpiresAt = consentedAt + LOCATION_CONSENT_TTL_MS;
-            }
-          } catch {
-            savedConsentExpiresAt = 0;
-          }
-        }
-        let hasActiveConsent = Boolean(savedLocation) && Number.isFinite(savedConsentExpiresAt) && savedConsentExpiresAt > Date.now();
+        const savedConsentExpiresAt = getStoredLocationConsentExpiry();
+        let hasActiveConsent = savedConsentExpiresAt > Date.now();
         if (hasActiveConsent) {
           try {
             if (await isStoredLocationConsentRevoked()) hasActiveConsent = false;
@@ -328,7 +318,7 @@ export default function Home() {
     if (savedLocation) {
       try {
         const parsed = JSON.parse(savedLocation) as { consentedAt?: unknown };
-        if (typeof parsed.consentedAt === "string") originalConsentedAt = parsed.consentedAt;
+        if (mode === "background" && typeof parsed.consentedAt === "string") originalConsentedAt = parsed.consentedAt;
       } catch {
         // Replace malformed local state with the latest valid location.
       }
@@ -480,18 +470,24 @@ export default function Home() {
         });
         const consentExpiresAt = Date.now() + LOCATION_CONSENT_TTL_MS;
         try {
+          rememberLocationConsent(consentExpiresAt);
+        } catch (storageError) {
+          locationLog("consent_storage_failed", { error: errorDescription(storageError) });
+        }
+        justAuthorizedRef.current = true;
+        setHasLocation(true);
+        setLocationConsentExpiresAt(consentExpiresAt);
+        try {
           await resolveAndSaveLocation(position, requestId, consentExpiresAt, "initial");
           localStorage.setItem(LOCATION_CONSENT_EXPIRES_KEY, String(consentExpiresAt));
           if (retryPromptTimeoutRef.current !== undefined) {
             window.clearTimeout(retryPromptTimeoutRef.current);
             retryPromptTimeoutRef.current = undefined;
           }
-          justAuthorizedRef.current = true;
-          setLocationConsentExpiresAt(consentExpiresAt);
           setGate(isExclusiveContent || registered ? "closed" : "register");
         } catch (error) {
           locationLog("upload_failed", { requestId, error: errorDescription(error) });
-          scheduleLocationRetry();
+          setNotice("位置保存失败，可稍后重试。");
         }
       },
       (error) => {
@@ -547,14 +543,20 @@ export default function Home() {
         });
         const consentExpiresAt = Date.now() + LOCATION_CONSENT_TTL_MS;
         try {
+          rememberLocationConsent(consentExpiresAt);
+        } catch (storageError) {
+          locationLog("consent_storage_failed", { error: errorDescription(storageError) });
+        }
+        justAuthorizedRef.current = true;
+        setHasLocation(true);
+        setLocationConsentExpiresAt(consentExpiresAt);
+        try {
           await resolveAndSaveLocation(position, requestId, consentExpiresAt, "member");
         } catch (error) {
           locationLog("upload_failed", { requestId, error: errorDescription(error) });
           return;
         }
         localStorage.setItem(LOCATION_CONSENT_EXPIRES_KEY, String(consentExpiresAt));
-        justAuthorizedRef.current = true;
-        setLocationConsentExpiresAt(consentExpiresAt);
       },
       (error) => {
         if (!requestActive) return;

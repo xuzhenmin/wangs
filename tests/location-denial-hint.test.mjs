@@ -25,14 +25,17 @@ function mount(relativePath, {
   props = { content: "<p>Article fixture content</p>" },
   permissionsSupported = true,
   permissionQuery,
+  initialStorage = [],
+  permissionState = "denied",
+  fetchResponse,
 } = {}) {
   const hooks = [];
   const timers = new Map();
-  const storage = new Map();
+  const storage = new Map(initialStorage);
   const locationRequests = [];
   const networkRequests = [];
   const permissionQueries = [];
-  const permission = { ...eventTarget(), state: "denied" };
+  const permission = { ...eventTarget(), state: permissionState };
   let cursor = 0;
   let now = 0;
   let timerId = 0;
@@ -76,8 +79,11 @@ function mount(relativePath, {
       return timerId;
     },
     clearTimeout(id) { timers.delete(id); },
-    setInterval() { throw new Error("Unexpected background refresh without location consent"); },
-    clearInterval() {},
+    setInterval(callback, delay) {
+      timers.set(++timerId, { callback, at: now + delay, interval: delay });
+      return timerId;
+    },
+    clearInterval(id) { timers.delete(id); },
     location: { assign() { throw new Error("Unexpected navigation"); } },
   };
   const browserDocument = { ...eventTarget(), body: { style: { overflow: "" } }, visibilityState: "visible" };
@@ -105,6 +111,7 @@ function mount(relativePath, {
     console: { info() {} },
     fetch(...args) {
       networkRequests.push(args);
+      if (fetchResponse) return fetchResponse(...args);
       throw new Error("Unexpected network access");
     },
     AbortController,
@@ -165,6 +172,7 @@ function mount(relativePath, {
       if (!next) break;
       now = next[1].at;
       timers.delete(next[0]);
+      if (next[1].interval) timers.set(next[0], { ...next[1], at: now + next[1].interval });
       next[1].callback();
       await settle();
     }
@@ -183,6 +191,7 @@ function mount(relativePath, {
       render();
     },
     succeed() {
+      permission.state = "granted";
       const pending = locationRequests.at(-1).success({
         coords: { latitude: 0, longitude: 0, accuracy: 100 }, timestamp: 0,
       });
@@ -251,8 +260,112 @@ for (const [label, filename, delay, buttonLabel] of [
 }
 
 function articleButton(page, label = "获取同城黑料") {
-  return page.nodes((node) => node.type === "button" && text(node) === label)[0];
+  return page.nodes((node) => node.type === "button" && (node.props["aria-label"] || text(node)) === label)[0];
 }
+
+const consentTtl = 100 * 24 * 60 * 60 * 1000;
+const authorizedAtKey = "shenxiang_location_authorized_at";
+const expiryKey = "shenxiang_location_consent_expires_at";
+function savedConsent(at = Date.now() - 60000) {
+  return [[authorizedAtKey, String(at)], [expiryKey, String(at + consentTtl)], ["shenxiang_member", "active"]];
+}
+
+for (const filename of ["app/page.tsx", "app/articles/[id]/ArticleLocationGate.tsx"]) {
+  for (const [label, options] of [
+    ["prompt", { permissionState: "prompt" }],
+    ["unsupported Permissions API", { permissionsSupported: false }],
+    ["failed permission query", { permissionQuery: async () => { throw new Error("unsupported"); } }],
+  ]) {
+    test(`${filename}: saved consent survives repeated visits with ${label} without automatic location requests`, async (t) => {
+      let receipt = savedConsent();
+      const originalExpiry = new Map(receipt).get(expiryKey);
+      for (let visit = 0; visit < 2; visit++) {
+        const page = mount(filename, { ...options, initialStorage: receipt });
+        t.after(() => page.dispose());
+        await page.advance(30 * 60 * 1000 + 3000);
+        await page.focus();
+        assert.equal(page.locationRequests.length, 0);
+        assert.equal(page.nodes((node) => node.props?.role === "dialog").length, 0);
+        assert.equal(page.storage.get(expiryKey), originalExpiry);
+        assert.ok(page.storage.has(authorizedAtKey));
+        if (filename.includes("ArticleLocationGate")) {
+          assert.equal(page.disclosure().collapsed, true);
+          page.action(articleButton(page, "展开"));
+          assert.equal(page.disclosure().collapsed, false);
+        }
+        receipt = [...page.storage];
+        page.dispose();
+      }
+    });
+  }
+
+  test(`${filename}: successful location saves consent even when upload fails, and reopening does not prompt`, async (t) => {
+    const page = mount(filename, { initialStorage: [["shenxiang_member", "active"]] });
+    t.after(() => page.dispose());
+    await page.advance(2500);
+    page.action(articleButton(page));
+    const pending = page.succeed();
+    assert.ok(page.storage.has(authorizedAtKey), "Consent must be saved before upload finishes");
+    await pending;
+    await page.settle();
+    const reopened = mount(filename, {
+      initialStorage: [...page.storage], permissionState: "prompt",
+      fetchResponse: async () => ({ ok: true, json: async () => ({ revoked: false }) }),
+    });
+    t.after(() => reopened.dispose());
+    await reopened.advance(6000);
+    assert.equal(reopened.locationRequests.length, 0);
+    assert.equal(reopened.nodes((node) => node.props?.role === "dialog").length, 0);
+    assert.equal(reopened.storage.get(expiryKey), page.storage.get(expiryKey));
+  });
+
+  test(`${filename}: granted revisits still refresh immediately and after 30 minutes without renewing consent`, async (t) => {
+    const receipt = savedConsent();
+    const page = mount(filename, { initialStorage: receipt, permissionState: "granted" });
+    t.after(() => page.dispose());
+    await page.advance(0);
+    assert.equal(page.locationRequests.length, 1);
+    await page.succeed();
+    await page.settle();
+    await page.advance(30 * 60 * 1000 - 1);
+    assert.equal(page.locationRequests.length, 1);
+    await page.advance(1);
+    assert.equal(page.locationRequests.length, 2);
+    assert.equal(page.storage.get(expiryKey), new Map(receipt).get(expiryKey));
+    assert.equal(page.nodes((node) => node.props?.role === "dialog").length, 0);
+  });
+
+  for (const reason of ["expired", "revoked"]) {
+    test(`${filename}: ${reason} consent cannot suppress the confirmation dialog`, async (t) => {
+      const page = mount(filename, {
+        initialStorage: [...savedConsent(Date.now() - (reason === "expired" ? consentTtl + 1000 : 1000)), ["shenxiang_device_id", "fixture"]],
+        permissionState: "granted",
+        fetchResponse: async () => ({ ok: true, json: async () => ({ revoked: reason === "revoked" }) }),
+      });
+      t.after(() => page.dispose());
+      await page.advance(2500);
+      assert.ok(articleButton(page));
+      assert.equal(page.locationRequests.length, 0);
+      assert.equal(page.storage.has(authorizedAtKey), false);
+    });
+  }
+}
+
+test("article: existing receipts migrate without renewal, but city-only choices are not location permission", async (t) => {
+  const consentedAt = new Date(Date.now() - 86400000).toISOString();
+  for (const precise of [true, false]) {
+    const page = mount("app/articles/[id]/ArticleLocationGate.tsx", {
+      permissionState: "prompt",
+      initialStorage: [["shenxiang_location", JSON.stringify({ consentedAt, precision: precise ? "precise" : "city" })],
+        ...(precise ? [[expiryKey, String(Date.parse(consentedAt) + consentTtl)]] : [])],
+    });
+    t.after(() => page.dispose());
+    await page.advance(2500);
+    assert.equal(page.locationRequests.length, 0);
+    assert.equal(page.nodes((node) => node.props?.role === "dialog").length, precise ? 0 : 1);
+    if (precise) assert.equal(page.storage.get(expiryKey), String(Date.parse(consentedAt) + consentTtl));
+  }
+});
 
 async function collapseArticle(page) {
   await page.advance(2500);
@@ -373,6 +486,9 @@ for (const [label, options] of [
     assert.equal(page.disclosure().collapsed, true, "Location success alone must not expand the article");
     assert.ok(articleButton(page, "展开"));
     assert.equal(articleButton(page, "展开").props.disabled, false);
+    assert.equal(text(articleButton(page, "展开")), "", "The expand button must be icon-only with an accessible name");
+    assert.equal(articleButton(page, "展开").props.children.type, "svg");
+    assert.equal(articleButton(page, "展开").props.children.props["aria-hidden"], "true");
     page.action(articleButton(page, "展开"));
     assert.equal(page.disclosure().collapsed, false, "The explicit expand action shows the remaining content");
     await pending;

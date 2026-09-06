@@ -21,7 +21,7 @@ export default function ArticleContentDisclosure({ content, collapsed }: { conte
     };
     const measure = () => {
       restoreAccessibility();
-      const height = Math.ceil(body.getBoundingClientRect().height / 2);
+      const height = Math.ceil(body.getBoundingClientRect().height / 4);
       viewport.style.maxHeight = `${height}px`;
       const cutoff = body.getBoundingClientRect().top + height;
       // Clipped links must not be reachable with Tab; fully hidden blocks must
