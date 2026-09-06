@@ -92,7 +92,7 @@ export default async function ArticlePage({ params }: ArticlePageProps) {
         <div className="published-divider" />
         <ArticleLocationGate key={article.id} content={content} />
       </article>
-      <footer className="published-footer"><Link className="brand small" href="/">深<span>巷</span></Link><span>内容由后台文档系统发布</span></footer>
+      <footer className="published-footer"><Link className="brand small" href="/">深<span>巷</span></Link></footer>
     </main>
   );
 }
