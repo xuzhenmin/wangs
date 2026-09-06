@@ -469,7 +469,7 @@ test("serves the site and persists consented locations with the Node runtime", a
   }
 
   // The image-count ceiling is a sync constraint, not a local publishing one.
-  const tooManyImages = `<p>超过同步图片上限</p>${`<img src="${sourceUrl}">`.repeat(51)}`;
+  const tooManyImages = `<p>超过同步图片上限</p>${`<img src="${sourceUrl}">`.repeat(101)}`;
   const oversizedPublication = await publishArticle(tooManyImages);
   assert.equal(oversizedPublication.status, 200);
   const oversizedPayload = await oversizedPublication.json();
@@ -477,7 +477,7 @@ test("serves the site and persists consented locations with the Node runtime", a
   const oversizedSync = await syncArticle();
   assert.equal(oversizedSync.status, 502);
   const oversizedSyncPayload = await oversizedSync.json();
-  assert.match(oversizedSyncPayload.remoteSync.detail, /50/);
+  assert.match(oversizedSyncPayload.remoteSync.detail, /100/);
   assert.deepEqual(oversizedSyncPayload.article, oversizedPayload.article);
   assert.equal(ossUploads.length, 0);
   assert.equal(ossFailedUploads.length, 0);

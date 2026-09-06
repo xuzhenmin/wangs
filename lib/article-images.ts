@@ -4,9 +4,10 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { isIP } from "node:net";
 import path from "node:path";
 import { load } from "cheerio";
+import { MAX_IMAGES_PER_ARTICLE } from "./article-image-limits";
+export { MAX_IMAGES_PER_ARTICLE } from "./article-image-limits";
 
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
-export const MAX_IMAGES_PER_ARTICLE = 50;
 const MAX_REDIRECTS = 3;
 const DOWNLOAD_TIMEOUT_MS = 15_000;
 

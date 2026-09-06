@@ -37,7 +37,7 @@ LOCAL_SITE_HOST=0.0.0.0 npm run local:start
 处理预览、`manifest.json` 和 `regions.json` 同样不提交。同步远端前，正文引用到的处理图会通过
 OSS 传输加速 Endpoint 上传到 `article-images/{文章 UUID}/`，正文地址随即替换成固定的
 OSS 公共 HTTPS 地址。远端文章同步只发送 JSON，不再重复上传图片。
-每篇文章单次最多下载、处理和同步 50 张图片。
+每篇文章单次最多下载、处理和同步 100 张图片。
 
 新增文章可以先保存草稿获得文章 UUID、导入原图并在本地发布；本地发布不执行图片处理校验，
 也不要求 OSS 可用。外链和 Blob 仍需导入才能在公开内容页正常展示，原有页面安全过滤不变。
@@ -232,7 +232,7 @@ OSS_ARTICLE_IMAGE_PREFIX=article-images
 同步目标默认必须解析到公网 IP，且不允许 HTTP 重定向。如果两台服务只通过可信内网
 通信，可仅在本地 `.env.local` 中显式配置 `ARTICLE_SYNC_ALLOW_PRIVATE=true`。
 
-同步时每篇文章最多上传 50 张图片，每张最多 8 MB；远端文章 JSON 同步请求最多 512 KB，
+同步时每篇文章最多上传 100 张图片，每张最多 8 MB；远端文章 JSON 同步请求最多 512 KB，
 不再需要为文章同步调大 Nginx 上传体积限制。
 
 The page saver respects `robots.txt`, filters common ad containers, and does not

@@ -28,6 +28,8 @@ next-env.d.ts
 data/*.sqlite
 data/*.sqlite-shm
 data/*.sqlite-wal
+data/watermark-templates/
+data/watermark-manifests/
 scraped-pages/
 # Article media is local working data, not source code. Published images live
 # on OSS; ignore originals, processed images, previews, and processing manifests.

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         深巷 Blob 图片导入助手
 // @namespace    shenxiang.local
-// @version      1.0.1
+// @version      1.0.2
 // @description  将原网页中的 Blob 图片批量发送到深巷内容编辑器
 // @match        http://*/*
 // @match        https://*/*
@@ -19,7 +19,7 @@
 
   const TASK_KEY = "shenxiang-current-image-import-task";
   const BUTTON_ID = "shenxiang-blob-import-button";
-  const MAX_IMAGES_PER_IMPORT = 50;
+  const MAX_IMAGES_PER_IMPORT = 100;
   const isEditorPage = location.pathname.startsWith("/ops-7q4m/editor");
 
   function activeTask() {

@@ -2,6 +2,7 @@ import OSS from "ali-oss";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { load } from "cheerio";
+import { MAX_IMAGES_PER_ARTICLE } from "./article-image-limits";
 import {
   isOssArticleImageSource,
   isProcessedLocalArticleImageSource,
@@ -9,7 +10,6 @@ import {
   ossArticleImagePrefix,
 } from "./article-image-urls";
 
-const MAX_ARTICLE_IMAGES = 50;
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 const PROCESSED_FILENAME_PATTERN = /^[0-9a-f]{24}\.(png|jpe?g|gif|webp)$/i;
 
@@ -70,8 +70,8 @@ function articleImageSources(content: string) {
 }
 
 function assertImageCount(count: number) {
-  if (count > MAX_ARTICLE_IMAGES) {
-    throw new ArticleImagePublicationError(`每篇文章最多发布 ${MAX_ARTICLE_IMAGES} 张图片。`, "validation");
+  if (count > MAX_IMAGES_PER_ARTICLE) {
+    throw new ArticleImagePublicationError(`每篇文章最多发布 ${MAX_IMAGES_PER_ARTICLE} 张图片。`, "validation");
   }
 }
 

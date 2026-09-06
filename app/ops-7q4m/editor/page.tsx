@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { RichTextEditor, RichTextPreview } from "./RichTextEditor";
+import { WatermarkTools } from "./WatermarkTools";
 
 type ArticleStatus = "draft" | "published";
 type EditorView = "edit" | "split" | "preview";
@@ -105,6 +106,8 @@ export default function ContentEditorPage() {
   const [view, setView] = useState<EditorView>("split");
   const [savingStatus, setSavingStatus] = useState<ArticleStatus | null>(null);
   const [processingImages, setProcessingImages] = useState(false);
+  const [processingWatermarks, setProcessingWatermarks] = useState(false);
+  const [watermarkPreview, setWatermarkPreview] = useState<{ original: string; content: string } | null>(null);
   const [activeImageImport, setActiveImageImport] = useState<ActiveImageImport | null>(null);
   const [imageImportProgress, setImageImportProgress] = useState<ImageImportProgress | null>(null);
   const [message, setMessage] = useState("");
@@ -139,6 +142,7 @@ export default function ContentEditorPage() {
     const requestedId = new URLSearchParams(window.location.search).get("id");
     const selected = (requestedId && data.articles.find((article) => article.id === requestedId)) || data.articles[0];
     setArticles(data.articles);
+    setWatermarkPreview(null);
     setActiveId(selected?.id || "");
     setDraft(selected ? articleDraft(selected) : emptyDraft);
     setArticleImageBaseUrl(data.articleImageBaseUrl || "");
@@ -236,11 +240,15 @@ export default function ContentEditorPage() {
     setArticles([]);
     setActiveId("");
     setDraft(emptyDraft);
+    setProcessingWatermarks(false);
+    setWatermarkPreview(null);
   };
 
   const selectArticle = (article: Article) => {
+    if (processingWatermarks) return;
     if (dirty && !window.confirm("当前修改尚未保存，确定切换文档吗？")) return;
     setActiveId(article.id);
+    setWatermarkPreview(null);
     setDraft(articleDraft(article));
     setActiveImageImport(null);
     setImageImportProgress(null);
@@ -248,8 +256,10 @@ export default function ContentEditorPage() {
   };
 
   const newArticle = () => {
+    if (processingWatermarks) return;
     if (dirty && !window.confirm("当前修改尚未保存，确定新建文档吗？")) return;
     setActiveId("");
+    setWatermarkPreview(null);
     setDraft(emptyDraft);
     setActiveImageImport(null);
     setImageImportProgress(null);
@@ -257,6 +267,11 @@ export default function ContentEditorPage() {
   };
 
   const saveArticle = async (status: ArticleStatus) => {
+    if (processingWatermarks) return;
+    if (watermarkPreview?.original === draft.content) {
+      setMessage("请先确认应用或放弃去水印预览，再保存或发布。");
+      return;
+    }
     setMessage("");
     if (!draft.title.trim()) {
       setMessage("请先填写文档标题。");
@@ -298,6 +313,7 @@ export default function ContentEditorPage() {
   };
 
   const openRemoteSync = (article: Article) => {
+    if (processingWatermarks) return;
     setSyncArticle(article);
     setRemoteSyncResult(null);
     const previousServer = window.localStorage.getItem("shenxiang_remote_server") || "";
@@ -484,7 +500,7 @@ export default function ContentEditorPage() {
         <header className="ops-head editor-head">
           <div><small>SUPER ADMIN / CONTENT STUDIO</small><h1>文档编辑与录入</h1></div>
           <div className="editor-head-actions">
-            <button className="editor-secondary" onClick={newArticle}>＋ 新建文档</button>
+            <button className="editor-secondary" disabled={processingWatermarks} onClick={newArticle}>＋ 新建文档</button>
             <button className="editor-secondary editor-mobile-logout" onClick={logout}>退出</button>
           </div>
         </header>
@@ -499,12 +515,13 @@ export default function ContentEditorPage() {
                     <button
                       className="document-sync-button"
                       type="button"
+                      disabled={processingWatermarks}
                       title="同步文章到远端服务器"
                       aria-label={`同步《${article.title}》到远端服务器`}
                       onClick={() => openRemoteSync(article)}
                     >⇧</button>
                   )}
-                  <button className="document-select" onClick={() => selectArticle(article)}>
+                  <button className="document-select" disabled={processingWatermarks} onClick={() => selectArticle(article)}>
                     <span className={`article-state ${article.status}`}>{article.status === "published" ? "已发布" : "草稿"}</span>
                     <b>{article.title}</b>
                     <small>{article.summary || "暂无摘要"}</small>
@@ -540,6 +557,14 @@ export default function ContentEditorPage() {
               <label className="summary-field">内容摘要<textarea value={draft.summary} onChange={(event) => setDraft({ ...draft, summary: event.target.value })} placeholder="输入一段简短摘要" maxLength={500} rows={2} /></label>
             </div>
 
+            <WatermarkTools key={activeId || "new"} articleId={activeId} content={draft.content} disabled={processingImages || savingStatus !== null || syncingRemote}
+              onBusy={setProcessingWatermarks}
+              onPreview={(preview) => { setWatermarkPreview(preview); if (preview) setView("split"); }}
+              onApply={(preview) => {
+                setDraft(current => current.content === preview.original ? { ...current, content: preview.content } : current);
+                setWatermarkPreview(null);
+              }}
+            />
             <div className={`editor-workspace view-${view}`}>
               <section className="editor-pane input-pane">
                 <div className="pane-head rich-pane-head">
@@ -547,7 +572,7 @@ export default function ContentEditorPage() {
                   <button
                     className="localize-images-button"
                     type="button"
-                    disabled={!pendingImageCount || processingImages || savingStatus !== null}
+                    disabled={!pendingImageCount || processingImages || processingWatermarks || savingStatus !== null}
                     onClick={() => void localizeImages()}
                   >
                     {processingImages ? "正在导入…" : pendingImageCount ? `导入待处理图片（${pendingImageCount}）` : "没有待导入图片"}
@@ -574,16 +599,16 @@ export default function ContentEditorPage() {
                 <RichTextEditor content={draft.content} onChange={(content) => setDraft((current) => ({ ...current, content }))} />
               </section>
               <section className="editor-pane preview-pane">
-                <div className="pane-head"><b>正文内容预览</b><small>图片替换结果会实时显示，但不会自动保存</small></div>
-                <ArticlePreview draft={draft} />
+                <div className="pane-head"><b>{watermarkPreview?.original === draft.content ? "去水印结果预览（尚未应用）" : "正文内容预览"}</b><small>图片替换结果会实时显示，但不会自动保存</small></div>
+                <ArticlePreview draft={watermarkPreview?.original === draft.content ? { ...draft, content: watermarkPreview.content } : draft} />
               </section>
             </div>
 
             <footer className="editor-savebar">
               <span className={/失败|请先|无法|仍有/.test(message) ? "save-message error" : "save-message"}>{message}</span>
               <div className="editor-save-actions">
-                <button className="save-draft-button" type="submit" disabled={savingStatus !== null || processingImages}>{savingStatus === "draft" ? "正在保存草稿…" : "保存草稿"}</button>
-                <button className="publish-button" type="button" disabled={savingStatus !== null || processingImages} onClick={() => void saveArticle("published")}>{savingStatus === "published" ? "正在发布…" : draft.status === "published" ? "发布更新" : "发布内容"}</button>
+                <button className="save-draft-button" type="submit" disabled={savingStatus !== null || processingImages || processingWatermarks}>{savingStatus === "draft" ? "正在保存草稿…" : "保存草稿"}</button>
+                <button className="publish-button" type="button" disabled={savingStatus !== null || processingImages || processingWatermarks} onClick={() => void saveArticle("published")}>{savingStatus === "published" ? "正在发布…" : draft.status === "published" ? "发布更新" : "发布内容"}</button>
               </div>
             </footer>
           </form>
