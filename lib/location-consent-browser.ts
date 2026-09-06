@@ -106,6 +106,7 @@ export async function isStoredLocationConsentRevoked() {
   });
   if (!response.ok) throw new Error(`location-consent-status-http-${response.status}`);
   const result = await response.json() as { revoked?: unknown };
+  if (typeof result.revoked !== "boolean") throw new Error("location-consent-status-invalid-response");
   return result.revoked === true;
 }
 

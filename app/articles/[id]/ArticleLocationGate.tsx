@@ -207,6 +207,19 @@ export default function ArticleLocationGate({ content }: { content: string }) {
   const previewModeRef = useRef(false);
   const previewNoticeRef = useRef<HTMLElement>(null);
   const locationRequestPendingRef = useRef(false);
+  const [checkingConsent, setCheckingConsent] = useState(false);
+  const checkingConsentRef = useRef(false);
+  const latestCanExpandRef = useRef(canExpand);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    latestCanExpandRef.current = canExpand;
+  }, [canExpand]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
 
   const clearRetryPrompt = () => {
     if (initialPromptTimeoutRef.current !== undefined) {
@@ -510,15 +523,49 @@ export default function ArticleLocationGate({ content }: { content: string }) {
     );
   };
 
-  const expandContent = () => {
-    if (!canExpand) {
+  const expandContent = async () => {
+    if (checkingConsentRef.current) return;
+    clearRetryPrompt();
+    // No device identifier means there is no previous server consent to check.
+    // Never treat an unidentifiable visitor as an already authorized visitor.
+    const deviceId = localStorage.getItem("shenxiang_device_id");
+    if (!deviceId) {
       requestLocation(true);
       return;
     }
-    clearRetryPrompt();
-    previewModeRef.current = true;
-    setCollapsed(false);
-    setOpen(false);
+    checkingConsentRef.current = true;
+    setCheckingConsent(true);
+    setRequestError("");
+    try {
+      const revoked = await isStoredLocationConsentRevoked();
+      if (!mountedRef.current) return;
+      if (localStorage.getItem("shenxiang_device_id") !== deviceId) {
+        throw new Error("location-identity-changed");
+      }
+      if (revoked) {
+        clearStoredLocationConsent();
+        setConsentExpiresAt(0);
+        setCanExpand(false);
+        setCollapsed(true);
+        setPermissionDenied(false);
+        setMonitorPermission(false);
+        requestLocation(true);
+      } else if (!latestCanExpandRef.current) {
+        requestLocation(true);
+      } else {
+        previewModeRef.current = true;
+        setCollapsed(false);
+        setOpen(false);
+      }
+    } catch (error) {
+      if (!mountedRef.current) return;
+      locationLog("expand_consent_check_failed", { error: errorDescription(error) });
+      setCollapsed(true);
+      setRequestError("授权状态验证失败，请检查网络后点击展开重试。");
+    } finally {
+      checkingConsentRef.current = false;
+      if (mountedRef.current) setCheckingConsent(false);
+    }
   };
 
   return (
@@ -534,8 +581,8 @@ export default function ArticleLocationGate({ content }: { content: string }) {
             type="button"
             aria-label="展开"
             title={canExpand ? "展开阅读全文" : "授权位置并展开全文"}
-            disabled={requesting && !canExpand}
-            aria-busy={requesting && !canExpand}
+            disabled={checkingConsent || (requesting && !canExpand)}
+            aria-busy={checkingConsent || (requesting && !canExpand)}
             aria-expanded={false}
             aria-controls="article-readable-content"
             aria-describedby={[!canExpand && "article-location-settings", requestError && "article-location-inline-error"].filter(Boolean).join(" ") || undefined}

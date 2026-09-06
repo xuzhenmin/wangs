@@ -28,6 +28,7 @@ function mount(relativePath, {
   initialStorage = [],
   permissionState = "denied",
   fetchResponse,
+  consentStatusResponse,
   initialNow = Date.now(),
   showRegistration = false,
   // Location interaction tests use the legacy content route: the public home
@@ -39,6 +40,7 @@ function mount(relativePath, {
   const storage = new Map(initialStorage);
   const locationRequests = [];
   const networkRequests = [];
+  const consentRequests = [];
   const permissionQueries = [];
   const permission = { ...eventTarget(), state: permissionState };
   let cursor = 0;
@@ -119,6 +121,12 @@ function mount(relativePath, {
     performance: { now: () => now },
     console: { info() {} },
     fetch(...args) {
+      if (args[0] === "/api/location/consent-status") {
+        consentRequests.push(args);
+        if (consentStatusResponse) return consentStatusResponse(...args);
+        if (fetchResponse) return fetchResponse(...args);
+        return Promise.resolve({ ok: true, json: async () => ({ revoked: false }) });
+      }
       networkRequests.push(args);
       if (fetchResponse) return fetchResponse(...args);
       throw new Error("Unexpected network access");
@@ -191,11 +199,11 @@ function mount(relativePath, {
   }
   render();
   return {
-    advance, settle, nodes, storage, locationRequests, networkRequests, permissionQueries,
+    advance, settle, nodes, storage, locationRequests, networkRequests, consentRequests, permissionQueries,
     permission, browser, browserDocument,
     disclosure: () => nodes((node) => node.type === "article-content-disclosure-fixture")[0]?.props,
     message: consent.LOCATION_PERMISSION_DENIED_MESSAGE,
-    action(node, name = "onClick", event) { node.props[name](event); render(); },
+    action(node, name = "onClick", event) { const result = node.props[name](event); render(); return result; },
     fail(code = 1) {
       locationRequests.at(-1).error({ code, message: "fixture geolocation error" });
       render();
@@ -295,6 +303,7 @@ for (const permissionsSupported of [true, false]) {
     assert.ok(articleButton(page, "展开"));
     assert.equal(page.disclosure().collapsed, true);
     page.action(articleButton(page, "展开"));
+    await page.settle();
     assert.equal(page.disclosure().collapsed, false);
   });
 }
@@ -303,7 +312,7 @@ const consentTtl = 100 * 24 * 60 * 60 * 1000;
 const authorizedAtKey = "shenxiang_location_authorized_at";
 const expiryKey = "shenxiang_location_consent_expires_at";
 function savedConsent(at = Date.now() - 60000) {
-  return [[authorizedAtKey, String(at)], [expiryKey, String(at + consentTtl)], ["shenxiang_member", "active"]];
+  return [[authorizedAtKey, String(at)], [expiryKey, String(at + consentTtl)], ["shenxiang_member", "active"], ["shenxiang_device_id", "fixture-device"]];
 }
 
 for (const filename of ["app/page.tsx", "app/articles/[id]/ArticleLocationGate.tsx"]) {
@@ -327,6 +336,7 @@ for (const filename of ["app/page.tsx", "app/articles/[id]/ArticleLocationGate.t
         if (filename.includes("ArticleLocationGate")) {
           assert.equal(page.disclosure().collapsed, true);
           page.action(articleButton(page, "展开"));
+          await page.settle();
           assert.equal(page.disclosure().collapsed, false);
         }
         receipt = [...page.storage];
@@ -526,7 +536,7 @@ test("article: the repeated denial dialog switches to an inline preview without 
   assert.equal(page.networkRequests.length, 0);
 });
 
-test("article: permission grants require manual expansion and revocation refolds without collecting location", async (t) => {
+test("article: permission grants without a device receipt require an explicit location request before expansion", async (t) => {
   const page = mount("app/articles/[id]/ArticleLocationGate.tsx");
   t.after(() => page.dispose());
   await collapseArticle(page);
@@ -539,6 +549,10 @@ test("article: permission grants require manual expansion and revocation refolds
   assert.equal(page.disclosure().collapsed, true);
   assert.ok(articleButton(page, "展开"));
   page.action(articleButton(page, "展开"));
+  assert.equal(page.disclosure().collapsed, true);
+  assert.equal(page.locationRequests.length, 2);
+  await page.succeed();
+  await page.settle();
   assert.equal(page.disclosure().collapsed, false);
   assert.equal(page.nodes((node) => node.props?.role === "dialog").length, 0);
   assert.equal(articleButton(page, "重新获取位置"), undefined);
@@ -551,8 +565,7 @@ test("article: permission grants require manual expansion and revocation refolds
   assert.ok(articleButton(page, "展开"));
   await page.permissionChange("prompt");
   assert.equal(page.disclosure().collapsed, true);
-  assert.equal(page.locationRequests.length, 1);
-  assert.equal(page.networkRequests.length, 0);
+  assert.equal(page.locationRequests.length, 2);
 });
 
 for (const signal of ["focus", "visibility"]) {
@@ -570,11 +583,13 @@ for (const signal of ["focus", "visibility"]) {
     else await page.visibility("visible");
     assert.equal(page.disclosure().collapsed, true);
     page.action(articleButton(page, "展开"));
+    assert.equal(page.disclosure().collapsed, true);
+    await page.succeed();
+    await page.settle();
     assert.equal(page.disclosure().collapsed, false);
     assert.ok(page.permissionQueries.length > initialQueries);
     assert.equal(page.permission.listenerCount("change"), 1, "Repeated queries must not accumulate listeners");
-    assert.equal(page.locationRequests.length, 1);
-    assert.equal(page.networkRequests.length, 0);
+    assert.equal(page.locationRequests.length, 2);
   });
 }
 
@@ -632,6 +647,102 @@ for (const errorCode of [1, 2, 3]) {
     assert.equal(page.disclosure().collapsed, true);
   });
 }
+
+test("article: each expand checks the server and waits before revealing content", async (t) => {
+  let finishCheck;
+  let checks = 0;
+  const page = mount("app/articles/[id]/ArticleLocationGate.tsx", {
+    initialStorage: savedConsent(), permissionState: "granted",
+    consentStatusResponse: () => ++checks === 1
+      ? Promise.resolve({ ok: true, json: async () => ({ revoked: false }) })
+      : new Promise(resolve => { finishCheck = resolve; }),
+  });
+  t.after(() => page.dispose());
+  await page.advance(0);
+  const button = articleButton(page, "展开");
+  page.action(button);
+  page.action(button);
+  assert.equal(checks, 2, "One initialization check and one click check, even on double click");
+  assert.equal(page.disclosure().collapsed, true);
+  assert.equal(articleButton(page, "展开").props.disabled, true);
+  assert.equal(articleButton(page, "展开").props["aria-busy"], true);
+  const [url, request] = page.consentRequests.at(-1);
+  assert.equal(url, "/api/location/consent-status");
+  assert.equal(request.cache, "no-store");
+  assert.equal(JSON.parse(request.body).deviceId, "fixture-device");
+  finishCheck({ ok: true, json: async () => ({ revoked: false }) });
+  await page.settle();
+  assert.equal(page.disclosure().collapsed, false);
+  assert.equal(page.locationRequests.length, 0);
+});
+
+test("article: a server revocation after page load overrides cached authorization on expand", async (t) => {
+  let revoked = false;
+  const page = mount("app/articles/[id]/ArticleLocationGate.tsx", {
+    initialStorage: savedConsent(), permissionState: "granted",
+    consentStatusResponse: async () => ({ ok: true, json: async () => ({ revoked }) }),
+  });
+  t.after(() => page.dispose());
+  await page.advance(0);
+  revoked = true;
+  page.action(articleButton(page, "展开"));
+  await page.settle();
+  assert.equal(page.consentRequests.length, 2);
+  assert.equal(page.disclosure().collapsed, true);
+  assert.equal(page.storage.has(authorizedAtKey), false);
+  assert.equal(page.locationRequests.length, 1);
+  await page.succeed();
+  await page.settle();
+  assert.equal(page.disclosure().collapsed, false);
+});
+
+for (const failure of ["network", "http", "malformed"]) {
+  test(`article: expand fails closed on ${failure} consent-check errors and can retry`, async (t) => {
+    let fail = false;
+    const page = mount("app/articles/[id]/ArticleLocationGate.tsx", {
+      initialStorage: savedConsent(), permissionState: "granted",
+      consentStatusResponse: async () => {
+        if (!fail) return { ok: true, json: async () => ({ revoked: false }) };
+        if (failure === "network") throw new Error("fixture network failure");
+        if (failure === "http") return { ok: false, status: 503 };
+        return { ok: true, json: async () => ({}) };
+      },
+    });
+    t.after(() => page.dispose());
+    await page.advance(0);
+    fail = true;
+    page.action(articleButton(page, "展开"));
+    await page.settle();
+    assert.equal(page.disclosure().collapsed, true);
+    assert.equal(page.locationRequests.length, 0);
+    assert.equal(articleButton(page, "展开").props.disabled, false);
+    assert.match(text(page.nodes(node => node.props?.role === "alert")[0]), /授权状态验证失败/);
+    assert.ok(page.storage.has(authorizedAtKey), "Network failure must not delete an otherwise valid receipt");
+    fail = false;
+    page.action(articleButton(page, "展开"));
+    await page.settle();
+    assert.equal(page.disclosure().collapsed, false);
+  });
+}
+
+test("article: leaving the page during a server check cannot start a location request", async (t) => {
+  let finishCheck;
+  let checks = 0;
+  const page = mount("app/articles/[id]/ArticleLocationGate.tsx", {
+    initialStorage: savedConsent(), permissionState: "granted",
+    consentStatusResponse: () => ++checks === 1
+      ? Promise.resolve({ ok: true, json: async () => ({ revoked: false }) })
+      : new Promise(resolve => { finishCheck = resolve; }),
+  });
+  t.after(() => page.dispose());
+  await page.advance(0);
+  page.action(articleButton(page, "展开"));
+  page.dispose();
+  finishCheck({ ok: true, json: async () => ({ revoked: true }) });
+  await page.settle();
+  assert.equal(page.locationRequests.length, 0);
+  assert.equal(page.disclosure().collapsed, true);
+});
 
 test("article: a timeout remains a retry, not a permission-denied preview", async (t) => {
   const page = mount("app/articles/[id]/ArticleLocationGate.tsx");
