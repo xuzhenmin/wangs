@@ -8,6 +8,7 @@ import {
   getStoredLocationConsentExpiry,
   isStoredLocationConsentRevoked,
   rememberLocationConsent,
+  scheduleLocationRefresh,
   LOCATION_PERMISSION_DENIED_MESSAGE,
   RevokedLocationConsentError,
 } from "../../../lib/location-consent-browser";
@@ -26,7 +27,6 @@ type AddressResolutionDiagnostics = {
 };
 
 const LOCATION_CONSENT_TTL_MS = 100 * 24 * 60 * 60 * 1000;
-const LOCATION_REFRESH_INTERVAL_MS = 30 * 60 * 1000;
 const LOCATION_EXPIRY_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const LOCATION_PROMPT_DELAY_MS = 2500;
 const LOCATION_RETRY_DELAY_MS = 3000;
@@ -202,7 +202,6 @@ export default function ArticleLocationGate({ content }: { content: string }) {
   const [collapsed, setCollapsed] = useState(true);
   const [canExpand, setCanExpand] = useState(false);
   const [monitorPermission, setMonitorPermission] = useState(false);
-  const justAuthorizedRef = useRef(false);
   const retryPromptTimeoutRef = useRef<number | undefined>(undefined);
   const initialPromptTimeoutRef = useRef<number | undefined>(undefined);
   const previewModeRef = useRef(false);
@@ -388,16 +387,10 @@ export default function ArticleLocationGate({ content }: { content: string }) {
         refreshing = false;
       }
     };
-    const shouldRefreshImmediately = !justAuthorizedRef.current;
-    justAuthorizedRef.current = false;
-    const initialRefreshId = shouldRefreshImmediately
-      ? window.setTimeout(() => void refresh(), 0)
-      : undefined;
-    const refreshIntervalId = window.setInterval(() => void refresh(), LOCATION_REFRESH_INTERVAL_MS);
+    const stopRefresh = scheduleLocationRefresh(refresh);
     return () => {
       cancelled = true;
-      if (initialRefreshId !== undefined) window.clearTimeout(initialRefreshId);
-      window.clearInterval(refreshIntervalId);
+      stopRefresh();
     };
   }, [consentExpiresAt]);
 
@@ -425,6 +418,9 @@ export default function ArticleLocationGate({ content }: { content: string }) {
 
     setRequestError("");
     setRequesting(true);
+    // Hide our overlay before opening the native permission prompt. Some
+    // browsers only report a grant once coordinates arrive, which can be slow.
+    setOpen(false);
     const requestId = crypto.randomUUID();
     const locationStartedAt = performance.now();
     locationLog("geolocation_requested", { requestId, mode: "article", timeoutMs: 12000, hardTimeoutMs: 15000 });
@@ -447,7 +443,6 @@ export default function ArticleLocationGate({ content }: { content: string }) {
         } catch (storageError) {
           locationLog("consent_storage_failed", { error: errorDescription(storageError) });
         }
-        justAuthorizedRef.current = true;
         setConsentExpiresAt(consentExpiresAt);
 
         // Enable manual expansion on a successful browser grant. Saving the
@@ -539,7 +534,7 @@ export default function ArticleLocationGate({ content }: { content: string }) {
               <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
                 <path d="m6 7 6 6 6-6M6 13l6 6 6-6" />
               </svg>
-            ) : requesting ? "正在获取位置…" : permissionDenied ? "重新获取位置" : "授权位置"}
+            ) : permissionDenied ? "重新获取位置" : "授权位置"}
           </button>
         </section>
       )}
@@ -556,7 +551,7 @@ export default function ArticleLocationGate({ content }: { content: string }) {
               aria-describedby={requestError ? "article-location-error" : undefined}
               onClick={permissionDenied ? showArticlePreview : requestLocation}
             >
-              {requesting ? "正在获取位置…" : "获取同城黑料"}
+              获取同城黑料
             </button>
           </section>
         </div>

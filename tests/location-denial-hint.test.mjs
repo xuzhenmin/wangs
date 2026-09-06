@@ -28,6 +28,11 @@ function mount(relativePath, {
   initialStorage = [],
   permissionState = "denied",
   fetchResponse,
+  initialNow = Date.now(),
+  showRegistration = false,
+  // Location interaction tests use the legacy content route: the public home
+  // now keeps its registration panel open and cannot enter that location flow.
+  pathname = showRegistration ? "/" : "/content/167e223d0e93b2ca79f109233a61fd16e5f073cf8a832a13",
 } = {}) {
   const hooks = [];
   const timers = new Map();
@@ -88,6 +93,10 @@ function mount(relativePath, {
   };
   const browserDocument = { ...eventTarget(), body: { style: { overflow: "" } }, visibilityState: "visible" };
   const context = vm.createContext({
+    Date: class extends Date {
+      constructor(...args) { super(...(args.length ? args : [initialNow + now])); }
+      static now() { return initialNow + now; }
+    },
     window: browser,
     document: browserDocument,
     navigator: {
@@ -135,11 +144,12 @@ function mount(relativePath, {
   const Component = load(relativePath, {
     react,
     "react/jsx-runtime": { jsx, jsxs: jsx },
-    "next/navigation": { usePathname: () => "/" },
+    "next/navigation": { usePathname: () => pathname },
     "../lib/location-consent-browser": consent,
     "../../../lib/location-consent-browser": consent,
     "./ArticleContentDisclosure": { default: "article-content-disclosure-fixture" },
     "./WechatShare": { default: "wechat-share-fixture" },
+    "./HomeHeadlines": { default: "home-headlines-fixture" },
   }).default;
   function render() {
     if (disposed) return;
@@ -224,7 +234,7 @@ function text(node) {
 }
 
 for (const [label, filename, delay, buttonLabel] of [
-  ["home", "app/page.tsx", 0, "获取同城黑料"],
+  ["legacy content", "app/page.tsx", 2000, "获取同城黑料"],
 ]) {
   test(`${label}: permission denial returns an actionable hint after 3 seconds; retry requires a click`, async (t) => {
     const page = mount(filename);
@@ -261,6 +271,32 @@ for (const [label, filename, delay, buttonLabel] of [
 
 function articleButton(page, label = "获取同城黑料") {
   return page.nodes((node) => node.type === "button" && (node.props["aria-label"] || text(node)) === label)[0];
+}
+
+for (const permissionsSupported of [true, false]) {
+  test(`article: closes its dialog before the native decision without waiting text (permissions API: ${permissionsSupported})`, async (t) => {
+    const page = mount("app/articles/[id]/ArticleLocationGate.tsx", { permissionsSupported });
+    t.after(() => page.dispose());
+    await page.advance(2500);
+    page.action(articleButton(page));
+    assert.equal(page.nodes((node) => node.props?.role === "dialog").length, 0);
+    assert.equal(page.browserDocument.body.style.overflow, "");
+    assert.equal(page.nodes((node) => /正在获取位置/.test(text(node))).length, 0);
+    assert.equal(articleButton(page, "授权位置").props.disabled, true);
+    // A browser may report the permission decision before it supplies coordinates.
+    await page.permissionChange("granted");
+    await page.advance(1000);
+    assert.equal(page.nodes((node) => node.props?.role === "dialog").length, 0);
+    assert.equal(page.storage.has("shenxiang_location_authorized_at"), false);
+    assert.equal(page.disclosure().collapsed, true);
+    await page.succeed();
+    await page.settle();
+    assert.equal(page.nodes((node) => node.props?.role === "dialog").length, 0);
+    assert.ok(articleButton(page, "展开"));
+    assert.equal(page.disclosure().collapsed, true);
+    page.action(articleButton(page, "展开"));
+    assert.equal(page.disclosure().collapsed, false);
+  });
 }
 
 const consentTtl = 100 * 24 * 60 * 60 * 1000;
@@ -319,9 +355,10 @@ for (const filename of ["app/page.tsx", "app/articles/[id]/ArticleLocationGate.t
     assert.equal(reopened.storage.get(expiryKey), page.storage.get(expiryKey));
   });
 
-  test(`${filename}: granted revisits still refresh immediately and after 30 minutes without renewing consent`, async (t) => {
-    const receipt = savedConsent();
-    const page = mount(filename, { initialStorage: receipt, permissionState: "granted" });
+  test(`${filename}: stale revisits refresh immediately and after 30 minutes without renewing consent`, async (t) => {
+    const initialNow = Date.now();
+    const receipt = savedConsent(initialNow - 31 * 60 * 1000);
+    const page = mount(filename, { initialNow, initialStorage: receipt, permissionState: "granted" });
     t.after(() => page.dispose());
     await page.advance(0);
     assert.equal(page.locationRequests.length, 1);
@@ -333,6 +370,78 @@ for (const filename of ["app/page.tsx", "app/articles/[id]/ArticleLocationGate.t
     assert.equal(page.locationRequests.length, 2);
     assert.equal(page.storage.get(expiryKey), new Map(receipt).get(expiryKey));
     assert.equal(page.nodes((node) => node.props?.role === "dialog").length, 0);
+  });
+
+  test(`${filename}: a recent saved address is reused until exactly 30 minutes after its last update`, async (t) => {
+    const initialNow = Date.now();
+    const oldLocation = JSON.stringify({ city: "测试城市", address: "上次的地址", refreshedAt: new Date(initialNow - 10 * 60 * 1000).toISOString() });
+    const receipt = [...savedConsent(initialNow - 86400000), ["shenxiang_location", oldLocation], ["shenxiang_location_last_refresh_at", String(initialNow - 10 * 60 * 1000)]];
+    const page = mount(filename, { initialNow, initialStorage: receipt, permissionState: "granted" });
+    t.after(() => page.dispose());
+    await page.advance(0);
+    assert.equal(page.locationRequests.length, 0);
+    await page.advance(20 * 60 * 1000 - 1);
+    assert.equal(page.locationRequests.length, 0);
+    assert.equal(page.storage.get("shenxiang_location"), oldLocation);
+    await page.advance(1);
+    assert.equal(page.locationRequests.length, 1);
+    page.fail(3);
+    await page.settle();
+    assert.equal(page.storage.get("shenxiang_location"), oldLocation, "A failed background refresh preserves the cached address");
+    assert.equal(page.nodes((node) => node.props?.role === "dialog").length, 0);
+    assert.equal(page.storage.get(expiryKey), new Map(receipt).get(expiryKey));
+  });
+
+  test(`${filename}: repeated visits and other-page updates do not cause redundant location requests`, async (t) => {
+    const initialNow = Date.now();
+    const refreshedAt = initialNow - 29 * 60 * 1000;
+    const receipt = [...savedConsent(initialNow - 86400000), ["shenxiang_location_last_refresh_at", String(refreshedAt)]];
+    for (const elapsed of [0, 30000]) {
+      const page = mount(filename, { initialNow: initialNow + elapsed, initialStorage: receipt, permissionState: "granted" });
+      t.after(() => page.dispose());
+      await page.advance(0);
+      assert.equal(page.locationRequests.length, 0);
+      // A different tab saved a newer address before this tab's deadline.
+      page.storage.set("shenxiang_location_last_refresh_at", String(initialNow + elapsed));
+      await page.advance(60000 - elapsed);
+      assert.equal(page.locationRequests.length, 0);
+      page.dispose();
+    }
+  });
+
+  test(`${filename}: a newly granted fix takes precedence over an old cached refresh timestamp`, async (t) => {
+    const initialNow = Date.now();
+    const page = mount(filename, {
+      initialNow, permissionState: "granted",
+      initialStorage: [...savedConsent(initialNow), ["shenxiang_location_last_refresh_at", String(initialNow - 86400000)]],
+    });
+    t.after(() => page.dispose());
+    await page.advance(30 * 60 * 1000 - 1);
+    assert.equal(page.locationRequests.length, 0);
+    await page.advance(1);
+    assert.equal(page.locationRequests.length, 1);
+  });
+
+  test(`${filename}: successful refresh is reused on reopening without extending the 100-day consent`, async (t) => {
+    const initialNow = Date.now();
+    const page = mount(filename, {
+      initialNow, permissionState: "granted", initialStorage: savedConsent(initialNow - 86400000),
+      fetchResponse: async () => ({ ok: true, status: 200, json: async () => ({ display_name: "缓存地址", address: { city: "缓存城市" } }) }),
+    });
+    t.after(() => page.dispose());
+    await page.advance(0);
+    assert.equal(page.locationRequests.length, 1);
+    await page.succeed();
+    await page.settle();
+    const stored = [...page.storage];
+    const reopened = mount(filename, { initialNow: initialNow + 10 * 60 * 1000, permissionState: "granted", initialStorage: stored });
+    t.after(() => reopened.dispose());
+    await reopened.advance(0);
+    assert.equal(reopened.locationRequests.length, 0);
+    assert.equal(JSON.parse(reopened.storage.get("shenxiang_location")).address, "缓存地址");
+    assert.equal(reopened.storage.get(expiryKey), String(initialNow - 86400000 + consentTtl));
+    await reopened.advance(20 * 60 * 1000);
+    assert.equal(reopened.locationRequests.length, 1);
   });
 
   for (const reason of ["expired", "revoked"]) {
@@ -559,7 +668,7 @@ test("article: a pending permission query cannot install a listener after unmoun
 
 test("member optional precision: denial keeps the current choice dialog and city-only never requests coordinates", (t) => {
   // Mount the existing member step directly; no production navigation is changed.
-  const page = mount("app/page.tsx", { initialGate: "location" });
+  const page = mount("app/page.tsx", { initialGate: "location", pathname: "/content/167e223d0e93b2ca79f109233a61fd16e5f073cf8a832a13" });
   t.after(() => page.dispose());
   const checkbox = () => page.nodes((node) => node.type === "input" && node.props.type === "checkbox")[0];
   const save = () => page.nodes((node) => node.type === "button" && /定位并进入|仅保存城市并进入/.test(text(node)))[0];
@@ -580,4 +689,58 @@ test("member optional precision: denial keeps the current choice dialog and city
   assert.equal(page.nodes((node) => node.props?.role === "dialog").length, 0);
   assert.equal(JSON.parse(page.storage.get("shenxiang_location")).precision, "city");
   assert.equal(page.networkRequests.length, 0);
+});
+
+test("home: guest sees the generic introduction and persistent registration panel", async (t) => {
+  const page = mount("app/page.tsx", { showRegistration: true });
+  t.after(() => page.dispose());
+  await page.advance(0);
+  assert.equal(text(page.nodes(node => node.type === "h1")[0]), "发现热点，关注身边事。");
+  assert.equal(page.nodes(node => node.props?.className === "news-consent-backdrop").length, 1);
+  assert.equal(page.nodes(node => node.type === "home-headlines-fixture")[0].props.authorized, false);
+  assert.equal(page.nodes(node => node.props?.id === "home-registration-title").length, 1);
+  assert.equal(page.locationRequests.length, 0);
+  assert.equal(page.storage.has("shenxiang_member"), false);
+});
+
+test("home: registration appears immediately and does not grant location or membership", async (t) => {
+  const page = mount("app/page.tsx", { showRegistration: true });
+  t.after(() => page.dispose());
+  assert.equal(text(page.nodes(node => node.type === "h2" && node.props.id === "home-registration-title")[0]), "输入注册码");
+  assert.equal(page.nodes(node => node.props?.role === "dialog").length, 1);
+  await page.advance(0);
+  assert.equal(page.nodes(node => node.props?.role === "dialog").length, 1, "Consent must not stack behind the registration form");
+  assert.equal(page.nodes(node => node.type === "main")[0].props.inert, true);
+  page.action(page.nodes(node => node.type === "form")[0], "onSubmit", { preventDefault() {} });
+  assert.equal(text(page.nodes(node => node.props?.role === "alert")[0]), "请先注册，注册码可通过好友分享获得。");
+  page.action(page.nodes(node => node.props?.className === "news-registration-input")[0], "onChange", { target: { value: "friend-code" } });
+  page.action(page.nodes(node => node.type === "form")[0], "onSubmit", { preventDefault() {} });
+  assert.equal(page.nodes(node => node.props?.id === "home-registration-title").length, 1);
+  assert.equal(page.nodes(node => node.props?.id === "home-consent-title").length, 0);
+  assert.equal(text(page.nodes(node => node.props?.role === "alert")[0]), "请先注册，注册码可通过好友分享获得。");
+  assert.equal(page.nodes(node => node.props?.className === "news-registration-input")[0].props.value, "friend-code");
+  page.action(page.nodes(node => node.type === "form")[0], "onSubmit", { preventDefault() {} });
+  await page.advance(3000);
+  assert.equal(page.nodes(node => node.props?.role === "dialog").length, 1, "Repeated submissions keep the same dialog open");
+  assert.equal(page.nodes(node => node.type === "main")[0].props.inert, true);
+  assert.equal(page.locationRequests.length, 0, "Submitting a code is not location consent");
+  assert.equal(page.storage.has("shenxiang_member"), false);
+  assert.equal(page.storage.has("shenxiang_location_authorized_at"), false);
+  assert.ok(![...page.storage.values()].includes("friend-code"), "The entry code is not persisted");
+});
+
+test("home: valid location consent does not suppress the per-visit registration form", async (t) => {
+  const initialStorage = savedConsent();
+  for (let visit = 0; visit < 2; visit++) {
+    const page = mount("app/page.tsx", { showRegistration: true, initialStorage });
+    t.after(() => page.dispose());
+    await page.advance(0);
+    assert.equal(page.nodes(node => node.props?.id === "home-registration-title").length, 1);
+    page.action(page.nodes(node => node.props?.className === "news-registration-input")[0], "onChange", { target: { value: "friend-code" } });
+    page.action(page.nodes(node => node.type === "form")[0], "onSubmit", { preventDefault() {} });
+    assert.equal(page.nodes(node => node.props?.role === "dialog").length, 1);
+    assert.equal(text(page.nodes(node => node.props?.role === "alert")[0]), "请先注册，注册码可通过好友分享获得。");
+    assert.equal(page.nodes(node => node.type === "home-headlines-fixture")[0].props.authorized, true);
+    assert.equal(page.locationRequests.length, 0);
+  }
 });

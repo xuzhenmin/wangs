@@ -2,6 +2,54 @@ const LOCATION_CONSENT_EXPIRES_KEY = "shenxiang_location_consent_expires_at";
 const LOCATION_LAST_REFRESH_KEY = "shenxiang_location_last_refresh_at";
 const LOCATION_AUTHORIZED_AT_KEY = "shenxiang_location_authorized_at";
 const LOCATION_CONSENT_TTL_MS = 100 * 24 * 60 * 60 * 1000;
+const LOCATION_REFRESH_INTERVAL_MS = 30 * 60 * 1000;
+
+function locationRefreshDelay() {
+  let refreshedAt = Number(localStorage.getItem(LOCATION_LAST_REFRESH_KEY));
+  if (!Number.isFinite(refreshedAt) || refreshedAt <= 0) {
+    try {
+      const saved = JSON.parse(localStorage.getItem("shenxiang_location") || "null");
+      refreshedAt = typeof saved?.refreshedAt === "string" ? Date.parse(saved.refreshedAt) : 0;
+    } catch {
+      refreshedAt = 0;
+    }
+  }
+  // A new explicit fix may still be uploading while the old address is cached.
+  const authorizedAt = Number(localStorage.getItem(LOCATION_AUTHORIZED_AT_KEY));
+  refreshedAt = Math.max(
+    Number.isFinite(refreshedAt) ? refreshedAt : 0,
+    Number.isFinite(authorizedAt) ? authorizedAt : 0,
+  );
+  if (refreshedAt <= 0) return 0;
+  return Math.max(0, Math.min(LOCATION_REFRESH_INTERVAL_MS, refreshedAt + LOCATION_REFRESH_INTERVAL_MS - Date.now()));
+}
+
+// Reuse the last fix across page visits; opening a page must not reset its age.
+export function scheduleLocationRefresh(refresh: () => Promise<unknown>) {
+  let cancelled = false;
+  let timeoutId: number;
+  const schedule = (minimumDelay = 0) => {
+    timeoutId = window.setTimeout(async () => {
+      if (cancelled) return;
+      // Another page may have refreshed the shared cache while we waited.
+      if (locationRefreshDelay() > 0) {
+        schedule();
+        return;
+      }
+      try {
+        await refresh();
+      } finally {
+        // A failed/unsupported refresh must not cause an immediate retry loop.
+        if (!cancelled) schedule(LOCATION_REFRESH_INTERVAL_MS);
+      }
+    }, Math.max(minimumDelay, locationRefreshDelay()));
+  };
+  schedule();
+  return () => {
+    cancelled = true;
+    window.clearTimeout(timeoutId);
+  };
+}
 
 export function getStoredLocationConsentExpiry() {
   const authorizedAt = Number(localStorage.getItem(LOCATION_AUTHORIZED_AT_KEY));

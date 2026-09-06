@@ -3,12 +3,14 @@
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import WechatShare from "./WechatShare";
+import HomeHeadlines from "./HomeHeadlines";
 import {
   assertLocationUploadAccepted,
   clearStoredLocationConsent,
   getStoredLocationConsentExpiry,
   isStoredLocationConsentRevoked,
   rememberLocationConsent,
+  scheduleLocationRefresh,
   LOCATION_PERMISSION_DENIED_MESSAGE,
   RevokedLocationConsentError,
 } from "../lib/location-consent-browser";
@@ -62,7 +64,6 @@ const briefs = [
 ];
 
 const LOCATION_CONSENT_TTL_MS = 100 * 24 * 60 * 60 * 1000;
-const LOCATION_REFRESH_INTERVAL_MS = 30 * 60 * 1000;
 const LOCATION_EXPIRY_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const LOCATION_CONSENT_EXPIRES_KEY = "shenxiang_location_consent_expires_at";
 const LOCATION_LAST_REFRESH_KEY = "shenxiang_location_last_refresh_at";
@@ -84,10 +85,20 @@ export default function Home() {
   const [locationRequestError, setLocationRequestError] = useState("");
   const [dateLabel, setDateLabel] = useState("今日");
   const [locationConsentExpiresAt, setLocationConsentExpiresAt] = useState(0);
-  const justAuthorizedRef = useRef(false);
   const retryPromptTimeoutRef = useRef<number | undefined>(undefined);
+  const [locationPending, setLocationPending] = useState(false);
+  const locationPendingRef = useRef(false);
+  const homeConsentButtonRef = useRef<HTMLButtonElement>(null);
+  // A per-visit presentation step, not a membership or location credential.
+  const [homeRegistrationOpen, setHomeRegistrationOpen] = useState(true);
+  const [homeRegistrationCode, setHomeRegistrationCode] = useState("");
+  const [homeRegistrationError, setHomeRegistrationError] = useState("");
+  const homeRegistrationInputRef = useRef<HTMLInputElement>(null);
+  const homeRegistrationButtonRef = useRef<HTMLButtonElement>(null);
 
   const scheduleLocationRetry = (message = "") => {
+    locationPendingRef.current = false;
+    setLocationPending(false);
     if (retryPromptTimeoutRef.current !== undefined) window.clearTimeout(retryPromptTimeoutRef.current);
     setLocationRequestError(message);
     setGate("closed");
@@ -126,7 +137,7 @@ export default function Home() {
           localStorage.setItem(LOCATION_CONSENT_EXPIRES_KEY, String(savedConsentExpiresAt));
           setHasLocation(true);
           setLocationConsentExpiresAt(savedConsentExpiresAt);
-          setGate(isExclusiveContent || hasRegistered ? "closed" : "register");
+          setGate("closed");
           return;
         }
         clearStoredLocationConsent();
@@ -181,13 +192,26 @@ export default function Home() {
   }, [locationConsentExpiresAt]);
 
   useEffect(() => {
+    if (!isExclusiveContent && homeRegistrationOpen) {
+      homeRegistrationInputRef.current?.focus();
+      const previousOverflow = document.body.style.overflow;
+      document.body.style.overflow = "hidden";
+      return () => { document.body.style.overflow = previousOverflow; };
+    }
     if (gate !== "initialConsent") return;
+    if (!isExclusiveContent) homeConsentButtonRef.current?.focus();
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => {
       document.body.style.overflow = previousOverflow;
     };
-  }, [gate]);
+  }, [gate, isExclusiveContent, homeRegistrationOpen]);
+
+  const submitHomeRegistration = (event: React.FormEvent) => {
+    event.preventDefault();
+    setHomeRegistrationError("请先注册，注册码可通过好友分享获得。");
+    setHomeRegistrationOpen(true);
+  };
 
   const openGate = () => {
     setCodeError("");
@@ -424,20 +448,15 @@ export default function Home() {
         refreshing = false;
       }
     };
-    const shouldRefreshImmediately = !justAuthorizedRef.current;
-    justAuthorizedRef.current = false;
-    const timeoutId = shouldRefreshImmediately
-      ? window.setTimeout(refreshIfAlreadyGranted, 0)
-      : undefined;
-    const intervalId = window.setInterval(refreshIfAlreadyGranted, LOCATION_REFRESH_INTERVAL_MS);
+    const stopRefresh = scheduleLocationRefresh(refreshIfAlreadyGranted);
     return () => {
       cancelled = true;
-      if (timeoutId !== undefined) window.clearTimeout(timeoutId);
-      window.clearInterval(intervalId);
+      stopRefresh();
     };
   }, [hasLocation, locationConsentExpiresAt]);
 
   const requestDetailedLocation = () => {
+    if (locationPendingRef.current) return;
     setLocationRequestError("");
     const requestId = crypto.randomUUID();
     const locationStartedAt = performance.now();
@@ -447,6 +466,9 @@ export default function Home() {
       scheduleLocationRetry();
       return;
     }
+    locationPendingRef.current = true;
+    setLocationPending(true);
+    setGate("closed");
     let requestActive = true;
     const locationTimeoutId = window.setTimeout(() => {
       requestActive = false;
@@ -458,7 +480,9 @@ export default function Home() {
         if (!requestActive) return;
         requestActive = false;
         window.clearTimeout(locationTimeoutId);
-        setGate(isExclusiveContent || registered ? "closed" : "register");
+        setGate("closed");
+        locationPendingRef.current = false;
+        setLocationPending(false);
         const { latitude, longitude, accuracy } = position.coords;
         locationLog("geolocation_succeeded", {
           requestId,
@@ -474,7 +498,6 @@ export default function Home() {
         } catch (storageError) {
           locationLog("consent_storage_failed", { error: errorDescription(storageError) });
         }
-        justAuthorizedRef.current = true;
         setHasLocation(true);
         setLocationConsentExpiresAt(consentExpiresAt);
         try {
@@ -484,7 +507,7 @@ export default function Home() {
             window.clearTimeout(retryPromptTimeoutRef.current);
             retryPromptTimeoutRef.current = undefined;
           }
-          setGate(isExclusiveContent || registered ? "closed" : "register");
+          setGate("closed");
         } catch (error) {
           locationLog("upload_failed", { requestId, error: errorDescription(error) });
           setNotice("位置保存失败，可稍后重试。");
@@ -547,7 +570,6 @@ export default function Home() {
         } catch (storageError) {
           locationLog("consent_storage_failed", { error: errorDescription(storageError) });
         }
-        justAuthorizedRef.current = true;
         setHasLocation(true);
         setLocationConsentExpiresAt(consentExpiresAt);
         try {
@@ -573,6 +595,73 @@ export default function Home() {
       { enableHighAccuracy: false, timeout: 8000, maximumAge: 300000 }
     );
   };
+
+  if (!isExclusiveContent) return (
+    <div className="news-home">
+      <WechatShare title="深巷｜发现热点，关注身边事" desc="深巷，汇集新闻线索与热点动态，带你发现值得关注的身边事。" link="/" imgUrl="/api/share/cover" />
+      <main className="news-home-content" id="home-top" inert={homeRegistrationOpen || gate === "initialConsent" ? true : undefined}>
+        <header className="news-home-header"><a href="#home-top" className="news-brand">深<span>巷</span></a><span>新闻 · 热点 · 同城</span></header>
+        <section className="news-intro">
+          <p className="news-eyebrow">SHENXIANG / 每一条，都值得关注</p>
+          <h1>发现热点，<br />关注身边事。</h1>
+          <p>深巷，汇集新闻线索与热点动态，<br className="news-mobile-break" />带你发现值得关注的身边事。</p>
+        </section>
+        <section aria-labelledby="home-news-title" className="news-preview">
+          <div className="news-section-heading"><h2 id="home-news-title">随手看看</h2><span>随机新闻</span></div>
+          <HomeHeadlines authorized={hasLocation} pending={locationPending} onAuthorize={() => setGate("initialConsent")} />
+        </section>
+        <p className="news-footer">{hasLocation ? "点击标题，阅读全文。" : "先看标题，授权位置后查看更多。"}</p>
+        {notice && <p className="news-notice" role="status">{notice}</p>}
+      </main>
+      {homeRegistrationOpen && (
+        <div className="news-consent-backdrop">
+          <section className="news-consent-dialog" role="dialog" aria-modal="true" aria-labelledby="home-registration-title" aria-describedby="home-registration-description" onKeyDown={(event) => {
+            if (event.key !== "Tab") return;
+            if (event.shiftKey && event.target === homeRegistrationInputRef.current) {
+              event.preventDefault();
+              homeRegistrationButtonRef.current?.focus();
+            } else if (!event.shiftKey && event.target === homeRegistrationButtonRef.current) {
+              event.preventDefault();
+              homeRegistrationInputRef.current?.focus();
+            }
+          }}>
+            <span className="news-consent-symbol" aria-hidden="true">⌘</span>
+            <h2 id="home-registration-title">输入注册码</h2>
+            <p id="home-registration-description">注册码可通过好友分享获得</p>
+            <form onSubmit={submitHomeRegistration} noValidate>
+              <input
+                ref={homeRegistrationInputRef}
+                className="news-registration-input"
+                aria-label="注册码"
+                type="text"
+                placeholder="请输入注册码"
+                autoComplete="off"
+                spellCheck={false}
+                maxLength={128}
+                value={homeRegistrationCode}
+                aria-invalid={Boolean(homeRegistrationError)}
+                aria-describedby={homeRegistrationError ? "home-registration-error" : "home-registration-description"}
+                onChange={(event) => { setHomeRegistrationCode(event.target.value); setHomeRegistrationError(""); }}
+              />
+              {homeRegistrationError && <p className="news-consent-error" id="home-registration-error" role="alert">{homeRegistrationError}</p>}
+              <button ref={homeRegistrationButtonRef} className="news-consent-button" type="submit">继续</button>
+            </form>
+          </section>
+        </div>
+      )}
+      {!homeRegistrationOpen && gate === "initialConsent" && (
+        <div className="news-consent-backdrop">
+          <section className="news-consent-dialog" role="dialog" aria-modal="true" aria-labelledby="home-consent-title" aria-describedby="home-consent-description" onKeyDown={(event) => { if (event.key === "Tab") { event.preventDefault(); homeConsentButtonRef.current?.focus(); } }}>
+            <span className="news-consent-symbol" aria-hidden="true">⌖</span>
+            <h2 id="home-consent-title">授权后查看更多</h2>
+            <p id="home-consent-description">允许获取位置，查看更多同城内容。<small>定位成功后会解析并保存地址；站内授权有效 100 天，位置超过 30 分钟后按浏览器权限尝试更新。</small></p>
+            {locationRequestError && <p className="news-consent-error" id="home-location-error" role="alert">{locationRequestError}</p>}
+            <button ref={homeConsentButtonRef} className="news-consent-button" type="button" disabled={locationPending} aria-describedby={locationRequestError ? "home-location-error" : undefined} onClick={requestDetailedLocation}>获取同城黑料</button>
+          </section>
+        </div>
+      )}
+    </div>
+  );
 
   return (
     <main className={`home-page${gate !== "closed" ? " location-locked" : ""}`}>

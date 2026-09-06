@@ -6,8 +6,8 @@ const siteUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim() || "https://news.osfeng
 export function generateMetadata(): Metadata {
   return {
     metadataBase: new URL(siteUrl),
-    title: "景甜张继科地下恋：红娘事件及时间线全曝光｜深巷",
-    description: "娱乐圈女演员景甜、张继科地下恋红娘事件及时间线全曝光，任嘉伦被指是真正牵线人。",
+    title: "深巷｜发现热点，关注身边事",
+    description: "深巷，汇集新闻线索与热点动态，带你发现值得关注的身边事。",
     applicationName: "深巷",
     icons: {
       icon: [{ url: "/favicon.png", type: "image/png", sizes: "64x64" }],
@@ -15,8 +15,8 @@ export function generateMetadata(): Metadata {
       apple: "/favicon.png",
     },
     openGraph: {
-      title: "景甜张继科地下恋：红娘事件及时间线全曝光｜深巷",
-      description: "景甜、张继科地下恋时间线及任嘉伦牵线人传闻梳理。",
+      title: "深巷｜发现热点，关注身边事",
+      description: "深巷，汇集新闻线索与热点动态，带你发现值得关注的身边事。",
       type: "website",
       url: "/",
       siteName: "深巷",
@@ -25,8 +25,8 @@ export function generateMetadata(): Metadata {
     },
     twitter: {
       card: "summary_large_image",
-      title: "景甜张继科地下恋：红娘事件及时间线全曝光｜深巷",
-      description: "景甜、张继科地下恋时间线及任嘉伦牵线人传闻梳理。",
+      title: "深巷｜发现热点，关注身边事",
+      description: "深巷，汇集新闻线索与热点动态，带你发现值得关注的身边事。",
       images: ["/api/share/cover"],
     },
   };

@@ -135,7 +135,13 @@ test("serves the site and persists consented locations with the Node runtime", a
   });
 
   const home = await waitForServer(origin, child, output);
-  assert.match(await home.text(), /<main class="home-page/);
+  const homeHtml = await home.text();
+  assert.match(homeHtml, /<main class="news-home-content/);
+  assert.match(homeHtml, /<title>深巷｜发现热点，关注身边事<\/title>/);
+  const emptyHeadlines = await fetch(`${origin}/api/articles/featured`);
+  assert.equal(emptyHeadlines.status, 200);
+  assert.equal(emptyHeadlines.headers.get("cache-control"), "no-store");
+  assert.deepEqual(await emptyHeadlines.json(), { articles: [] });
 
   const locationResponse = await fetch(`${origin}/api/location`, {
     method: "POST",
@@ -281,6 +287,7 @@ test("serves the site and persists consented locations with the Node runtime", a
   });
   assert.equal(draftResponse.status, 201);
   const draftPayload = await draftResponse.json();
+  assert.deepEqual(await (await fetch(`${origin}/api/articles/featured`)).json(), { articles: [] });
   const articleId = draftPayload.article.id;
   const sourceImageDirectory = path.join(projectRoot, "public", "article-images", articleId);
   const processedFilename = "0123456789abcdef01234567.png";
@@ -330,6 +337,7 @@ test("serves the site and persists consented locations with the Node runtime", a
 
   // Local creation preserves every image source. Only remote synchronization
   // validates whether the images belong to this article and are ready for OSS.
+  const headlineIds = new Set();
   for (const imageSource of [
     "https://external.example/image.png",
     "blob:https://external.example/image",
@@ -350,6 +358,14 @@ test("serves the site and persists consented locations with the Node runtime", a
     });
     assert.equal(createResponse.status, 201);
     const created = await createResponse.json();
+    headlineIds.add(created.article.id);
+    const publicHeadlines = await (await fetch(`${origin}/api/articles/featured`)).json();
+    assert.equal(publicHeadlines.articles.length, Math.min(3, headlineIds.size));
+    assert.equal(new Set(publicHeadlines.articles.map(item => item.id)).size, publicHeadlines.articles.length);
+    for (const item of publicHeadlines.articles) {
+      assert.ok(headlineIds.has(item.id), "Only published articles can appear on the home page");
+      assert.deepEqual(Object.keys(item).sort(), ["id", "title"], "No body, draft data or internal fields in public headline payload");
+    }
     assert.equal(created.article.status, "published");
     assert.equal(created.article.content, content);
     assert.equal(created.uploadedImageCount, 0);

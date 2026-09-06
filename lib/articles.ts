@@ -15,6 +15,11 @@ export type Article = {
 
 export type ArticleInput = Pick<Article, "title" | "summary" | "content" | "status">;
 
+export function randomPublishedHeadlines() {
+  return getDb().prepare(`SELECT id, title FROM articles
+    WHERE status = 'published' ORDER BY RANDOM() LIMIT 3`).all() as { id: string; title: string }[];
+}
+
 export class ExternalImagesPendingError extends Error {
   constructor() {
     super("请先在本地发布文章，完成图片处理后再同步到远端。");
