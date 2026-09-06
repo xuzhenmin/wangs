@@ -23,6 +23,14 @@ export type WatermarkResult = {
   reason: string;
   region?: { x: number; y: number; width: number; height: number };
   repairedPixels?: number;
+  platformWatermark?: {
+    text: string;
+    opacity: number;
+    transparencyPercent: number;
+    style: "plain";
+    position: "bottom-right";
+    region: { x: number; y: number; width: number; height: number };
+  };
 };
 const root = () => /* turbopackIgnore: true */ process.cwd();
 const templateDirectory = () => process.env.WATERMARK_TEMPLATE_DIR || path.join(root(), "data", "watermark-templates");
@@ -134,7 +142,7 @@ export async function processArticleWatermark(articleId: string, source: string,
     const manifestDirectory = path.join(root(), "data", "watermark-manifests", articleId);
     await mkdir(manifestDirectory, { recursive: true });
     await writeFile(path.join(manifestDirectory, `${outputHash.slice(0, 24)}.json`), JSON.stringify({
-      ...report, version: 1, algorithm: "template-chroma-ncc+inverse-alpha+harmonic-inpaint", articleId, source, localUrl,
+      ...report, version: 2, algorithm: "template-chroma-ncc+inverse-alpha+harmonic-inpaint+shenxiang-brand-v1", articleId, source, localUrl,
       sourceHash: createHash("sha256").update(input).digest("hex"), outputHash,
       templateHash: createHash("sha256").update(template).digest("hex"), settings: { ...settings, template: undefined },
       createdAt: new Date().toISOString(),

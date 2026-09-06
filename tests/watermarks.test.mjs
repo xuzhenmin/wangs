@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import sharp from 'sharp';
-import { createYellowTemplate, removeKnownWatermark, validateSettings } from '../scripts/watermark-engine.mjs';
+import { createYellowTemplate, removeAndBrandWatermark, removeKnownWatermark, validateSettings } from '../scripts/watermark-engine.mjs';
 
 export async function fixture(opacity = 1) {
   const width = 320, height = 240, tw = 80, th = 32, left = 225, top = 190;
@@ -83,4 +83,45 @@ test('invalid settings and non-raster templates are rejected', async () => {
   assert.throws(() => validateSettings({ ...f.settings, threshold: NaN }), /参数/);
   await assert.rejects(removeKnownWatermark(f.input, Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="80" height="32"/>'), f.settings), /SVG/);
   await assert.rejects(removeKnownWatermark(f.input, Buffer.from('garbage'), f.settings));
+});
+
+test('combined pipeline adds one deterministic translucent 深巷 mark after repair without modifying original', async () => {
+  const f = await fixture();
+  const original = Buffer.from(f.input);
+  const repaired = await removeKnownWatermark(f.input, f.template, f.settings);
+  const result = await removeAndBrandWatermark(f.input, f.template, f.settings);
+  assert.equal(result.status, 'processed');
+  assert.equal(result.platformWatermark.text, '深巷');
+  assert.equal(result.platformWatermark.opacity, 179);
+  assert.equal(result.platformWatermark.transparencyPercent, 30);
+  assert.equal(result.platformWatermark.position, 'bottom-right');
+  const { x, y, width, height } = result.platformWatermark.region;
+  assert.ok(x > 0 && y > 0 && x + width < f.width && y + height < f.height);
+  const { data: output, info } = await sharp(result.bytes).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  const before = await sharp(repaired.bytes).ensureAlpha().raw().toBuffer();
+  assert.equal(info.width, f.width); assert.equal(info.height, f.height);
+  let changed = 0, white = 0, orange = 0;
+  for (let j = 0; j < f.height; j++) for (let i = 0; i < f.width; i++) {
+    const p = (j * f.width + i) * 4;
+    if (i < x || i >= x + width || j < y || j >= y + height) {
+      assert.deepEqual(output.subarray(p, p + 4), before.subarray(p, p + 4));
+    } else {
+      if (!output.subarray(p, p + 3).equals(before.subarray(p, p + 3))) changed++;
+      if (output[p] > 180 && Math.abs(output[p] - output[p + 1]) < 3 && Math.abs(output[p] - output[p + 2]) < 3) white++;
+      if (output[p] > output[p + 1] + 20 && output[p + 1] > output[p + 2] + 20) orange++;
+    }
+    assert.equal(output[p + 3], 255);
+  }
+  assert.ok(changed > 30 && white > 10 && orange > 0, `Changed ${changed}, white ${white}, orange ${orange}`);
+  assert.deepEqual(f.input, original);
+  assert.deepEqual((await removeAndBrandWatermark(f.input, f.template, f.settings)).bytes, result.bytes);
+});
+
+test('combined pipeline never brands a skipped image', async () => {
+  const f = await fixture();
+  const input = await sharp(f.original, { raw: { width: f.width, height: f.height, channels: 4 } }).png().toBuffer();
+  const result = await removeAndBrandWatermark(input, f.template, f.settings);
+  assert.equal(result.status, 'skipped');
+  assert.equal(result.bytes, undefined);
+  assert.equal(result.platformWatermark, undefined);
 });

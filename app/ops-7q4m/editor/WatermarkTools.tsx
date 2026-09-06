@@ -167,10 +167,10 @@ export function WatermarkTools({ articleId, content, disabled, onBusy, onPreview
   const stale = preview !== null && preview.original !== content;
   return <section className="watermark-tools" aria-label="文章图片去水印">
     <div className="watermark-actions">
-      <button className="localize-images-button" type="button" disabled={disabled || busy || loading} onClick={() => void run()}>{operation === "process" ? "图片处理中…" : "一键去水印"}</button>
+      <button className="localize-images-button" type="button" disabled={disabled || busy || loading} onClick={() => void run()}>{operation === "process" ? "去水印并添加深巷水印中…" : "一键去水印并加深巷水印"}</button>
       <button className="editor-secondary" type="button" disabled={busy} onClick={() => setExpanded(!expanded)}>水印模板与参数 {expanded ? "▴" : "▾"}</button>
       {busy && <button type="button" onClick={() => controller.current?.abort()}>停止处理</button>}
-      <small>只处理当前文章的本地原图，不自动上传或发布。</small>
+      <small>成功去除旧水印后，添加右下角“深巷”水印（透明度 30%）。只处理本地原图，不自动上传或发布。</small>
     </div>
     <label className="watermark-consent"><input type="checkbox" checked={authorized} disabled={busy} onChange={event => setAuthorized(event.target.checked)} />我有权处理这些图片的水印，并会检查修补结果。</label>
     {message && <p role="status" className="watermark-message">{message}</p>}
@@ -211,7 +211,7 @@ export function WatermarkTools({ articleId, content, disabled, onBusy, onPreview
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <a href={result.source} target="_blank" rel="noreferrer"><img src={result.source} alt={`第 ${i + 1} 张原图`} loading="lazy" />查看原图 ↗</a>
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <a href={result.localUrl} target="_blank" rel="noreferrer"><img src={result.localUrl} alt={`第 ${i + 1} 张去水印结果`} loading="lazy" />查看结果 ↗</a>
+        <a href={result.localUrl} target="_blank" rel="noreferrer"><img src={result.localUrl} alt={`第 ${i + 1} 张去水印并添加深巷水印的结果`} loading="lazy" />查看结果 ↗</a>
       </div>}
     </div>)}</details>}
     {preview && <div className="watermark-actions">

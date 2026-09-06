@@ -79,6 +79,9 @@ test('admin watermark API: access control, preservation, live image serving and 
   assert.equal(processed.status, 200);
   const result = await processed.json();
   assert.equal(result.status, 'processed', JSON.stringify(result));
+  assert.equal(result.platformWatermark.text, '深巷');
+  assert.equal(result.platformWatermark.opacity, 179);
+  assert.match(result.reason, /已添加.*深巷/);
   assert.match(result.localUrl, new RegExp(`^/article-images/${article.id}/[0-9a-f]{24}\\.png$`));
   const image = await fetch(origin + result.localUrl);
   assert.equal(image.status, 200, 'New images must be visible without restarting Next');
@@ -92,6 +95,9 @@ test('admin watermark API: access control, preservation, live image serving and 
   const manifest = JSON.parse(await readFile(path.join(manifestDirectory, manifestName), 'utf8'));
   assert.equal(manifest.sourceHash, createHash('sha256').update(f.input).digest('hex'));
   assert.equal(manifest.outputHash, createHash('sha256').update(bytes).digest('hex'));
+  assert.equal(manifest.version, 2);
+  assert.equal(manifest.platformWatermark.text, '深巷');
+  assert.equal(manifest.platformWatermark.transparencyPercent, 30);
   const articles = await (await fetch(`${origin}/api/admin/articles`, { headers })).json();
   assert.deepEqual(articles.articles.find(a => a.id === article.id), saved, 'Processing cannot save or publish the article');
   assert.equal((await fetch(`${origin}/articles/${article.id}`)).status, 404);

@@ -1,4 +1,5 @@
 import sharp from 'sharp';
+import { SHENXIANG_WATERMARK_SVG } from './shenxiang-watermark.mjs';
 
 const PIXELS = 12_000_000;
 
@@ -196,4 +197,30 @@ export async function removeKnownWatermark(input, templateInput, settings) {
   const bytes = await sharp(data, { raw: info }).png().toBuffer();
   if (bytes.length > 8 * 1024 * 1024) throw new Error('处理结果超过 8 MB，请先缩小原图后重试。');
   return { status: 'processed', bytes, confidence: match.score, region: { x, y, width, height }, repairedPixels: repaired, reason: repaired ? '已进行局部推测修补，遮挡的文字和细节不能保证还原，请检查预览。' : '已按设定透明度反向混合，请检查边缘和残影。' };
+}
+
+// Brand only successfully repaired images. Detection failures must keep the
+// original intact rather than disguising an unremoved mark with a new logo.
+export async function removeAndBrandWatermark(input, templateInput, settings) {
+  const result = await removeKnownWatermark(input, templateInput, settings);
+  if (result.status !== 'processed') return result;
+  const { data, info } = await decode(result.bytes);
+  const shorter = Math.min(info.width, info.height);
+  const margin = Math.max(2, Math.min(Math.max(8, Math.round(shorter * 0.025)), Math.floor(shorter / 5)));
+  const fontSize = Math.max(12, shorter * 0.045);
+  const scale = Math.min(fontSize / 100, (info.width - 2 * margin) / 230, (info.height - 2 * margin) / 110);
+  const width = Math.max(1, Math.round(230 * scale)), height = Math.max(1, Math.round(110 * scale));
+  const left = info.width - margin - width, top = info.height - margin - height;
+  const overlay = await sharp(Buffer.from(SHENXIANG_WATERMARK_SVG)).resize(width, height).png().toBuffer();
+  const roi = await sharp(data, { raw: info }).extract({ left, top, width, height }).composite([{ input: overlay }]).raw().toBuffer();
+  // Copy only the branded rectangle so all other pixels remain byte-identical
+  // to the repair stage, including their alpha channel.
+  for (let j = 0; j < height; j++) roi.copy(data, ((top + j) * info.width + left) * 4, j * width * 4, (j + 1) * width * 4);
+  const bytes = await sharp(data, { raw: info }).png().toBuffer();
+  if (bytes.length > 8 * 1024 * 1024) throw new Error('添加深巷水印后的结果超过 8 MB，请先缩小原图后重试。');
+  return {
+    ...result, bytes,
+    platformWatermark: { text: '深巷', opacity: 179, transparencyPercent: 30, style: 'plain', position: 'bottom-right', region: { x: left, y: top, width, height } },
+    reason: `${result.reason}已添加右下角“深巷”水印（透明度 30%）。`,
+  };
 }

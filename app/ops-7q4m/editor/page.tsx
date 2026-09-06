@@ -611,7 +611,7 @@ export default function ContentEditorPage() {
                 <RichTextEditor content={draft.content} onChange={(content) => setDraft((current) => ({ ...current, content }))} />
               </section>
               <section className="editor-pane preview-pane">
-                <div className="pane-head"><b>{watermarkPreview?.original === draft.content ? "去水印结果预览（尚未应用）" : "正文内容预览"}</b><small>图片替换结果会实时显示，但不会自动保存</small></div>
+                <div className="pane-head"><b>{watermarkPreview?.original === draft.content ? "去水印＋深巷水印预览（尚未应用）" : "正文内容预览"}</b><small>图片替换结果会实时显示，但不会自动保存</small></div>
                 <ArticlePreview draft={watermarkPreview?.original === draft.content ? { ...draft, content: watermarkPreview.content } : draft} />
               </section>
             </div>
