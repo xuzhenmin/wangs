@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { RichTextEditor, RichTextPreview } from "./RichTextEditor";
 import { WatermarkTools } from "./WatermarkTools";
+import BackToTop from "../../BackToTop";
 
 type ArticleStatus = "draft" | "published";
 type EditorView = "edit" | "split" | "preview";
@@ -483,6 +484,13 @@ export default function ContentEditorPage() {
     );
   }
 
+  const saveActions = (
+    <div className="editor-save-actions">
+      <button className="save-draft-button" type="submit" disabled={savingStatus !== null || processingImages || processingWatermarks}>{savingStatus === "draft" ? "正在保存草稿…" : "保存草稿"}</button>
+      <button className="publish-button" type="button" disabled={savingStatus !== null || processingImages || processingWatermarks} onClick={() => void saveArticle("published")}>{savingStatus === "published" ? "正在发布…" : draft.status === "published" ? "发布更新" : "发布内容"}</button>
+    </div>
+  );
+
   return (
     <main className="ops-shell editor-shell">
       <aside className="ops-side">
@@ -537,6 +545,10 @@ export default function ContentEditorPage() {
           </aside>
 
           <form className="editor-card" onSubmit={(event) => { event.preventDefault(); void saveArticle("draft"); }}>
+            <div className="editor-savebar editor-savebar-top" aria-label="顶部保存与发布">
+              <span className={/失败|请先|无法|仍有/.test(message) ? "save-message error" : "save-message"}>{message}</span>
+              {saveActions}
+            </div>
             <div className="editor-toolbar">
               <div>
                 <span className="editing-label">{activeId ? "正在编辑" : "新建文档"}</span>
@@ -606,14 +618,12 @@ export default function ContentEditorPage() {
 
             <footer className="editor-savebar">
               <span className={/失败|请先|无法|仍有/.test(message) ? "save-message error" : "save-message"}>{message}</span>
-              <div className="editor-save-actions">
-                <button className="save-draft-button" type="submit" disabled={savingStatus !== null || processingImages || processingWatermarks}>{savingStatus === "draft" ? "正在保存草稿…" : "保存草稿"}</button>
-                <button className="publish-button" type="button" disabled={savingStatus !== null || processingImages || processingWatermarks} onClick={() => void saveArticle("published")}>{savingStatus === "published" ? "正在发布…" : draft.status === "published" ? "发布更新" : "发布内容"}</button>
-              </div>
+              {saveActions}
             </footer>
           </form>
         </div>
       </section>
+      <BackToTop />
       {syncArticle && (
         <div className="modal-backdrop article-sync-backdrop">
           <section className="modal article-sync-modal" role="dialog" aria-modal="true" aria-labelledby="article-sync-title">

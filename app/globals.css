@@ -347,6 +347,12 @@ footer { background:#1b1d1a; color:#d9d7cf; }.footer-inner { min-height:170px; d
 .rich-text-preview-surface h1 { margin:30px 0 14px; font-size:25px; }.rich-text-preview-surface h2 { margin:26px 0 12px; font-size:21px; }.rich-text-preview-surface h3 { margin:22px 0 10px; font-size:17px; }
 .rich-text-preview-surface p { margin:0 0 11px; }
 .editor-savebar { min-height:66px; padding:0 20px; display:flex; align-items:center; justify-content:space-between; gap:20px; background:#f7f6f1; border-top:1px solid #d8d6ce; }
+.editor-savebar.editor-savebar-top { position:static; border-top:0; border-bottom:1px solid #d8d6ce; }
+.editor-savebar-top .save-message:empty { display:none; }
+.editor-savebar-top .editor-save-actions { margin-left:auto; }
+.back-to-top { position:fixed; z-index:20; right:calc(20px + env(safe-area-inset-right,0px)); bottom:calc(20px + env(safe-area-inset-bottom,0px)); display:grid; place-items:center; width:46px; height:46px; padding:0; border:1px solid #666; border-radius:50%; background:#252722; color:#f7f6f1; box-shadow:0 3px 14px #0004; cursor:pointer; }
+.back-to-top:hover { background:#3b3e34; }
+.back-to-top:focus-visible { outline:3px solid #d9e467; outline-offset:3px; }
 .editor-savebar button { border:0; background:var(--red); color:#fff; padding:12px 22px; font-size:11px; font-weight:900; cursor:pointer; }
 .editor-savebar button:disabled { opacity:.55; cursor:wait; }
 .editor-save-actions { display:flex; align-items:center; gap:9px; flex-shrink:0; }
@@ -404,6 +410,8 @@ footer { background:#1b1d1a; color:#d9d7cf; }.footer-inner { min-height:170px; d
   .blob-import-actions a,.blob-import-actions button { flex:1; text-align:center; }
   .editor-savebar { position:sticky; bottom:0; z-index:5; }
   .editor-savebar { padding:10px 12px; align-items:flex-start; flex-direction:column; }
+  .editor-savebar:not(.editor-savebar-top) { padding-right:80px; }
+  .editor-savebar:not(.editor-savebar-top) button { min-width:0; padding:12px 8px; }
   .editor-save-actions { width:100%; }
   .editor-save-actions button { flex:1; }
   .editor-shell .ops-nav a i { display:none; }

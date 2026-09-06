@@ -7,6 +7,7 @@ import { getPublishedArticle } from "../../../lib/articles";
 import ArticleLocationGate from "./ArticleLocationGate";
 import ArticleViewTracker from "./ArticleViewTracker";
 import WechatShare from "../../WechatShare";
+import BackToTop from "../../BackToTop";
 import { articleShareData } from "../../../lib/share-metadata";
 
 export const dynamic = "force-dynamic";
@@ -93,6 +94,7 @@ export default async function ArticlePage({ params }: ArticlePageProps) {
         <ArticleLocationGate key={article.id} content={content} />
       </article>
       <footer className="published-footer"><Link className="brand small" href="/">深<span>巷</span></Link></footer>
+      <BackToTop />
     </main>
   );
 }
