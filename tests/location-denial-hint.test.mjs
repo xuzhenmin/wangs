@@ -282,7 +282,7 @@ for (const permissionsSupported of [true, false]) {
     assert.equal(page.nodes((node) => node.props?.role === "dialog").length, 0);
     assert.equal(page.browserDocument.body.style.overflow, "");
     assert.equal(page.nodes((node) => /正在获取位置/.test(text(node))).length, 0);
-    assert.equal(articleButton(page, "授权位置").props.disabled, true);
+    assert.equal(articleButton(page, "展开").props.disabled, true);
     // A browser may report the permission decision before it supplies coordinates.
     await page.permissionChange("granted");
     await page.advance(1000);
@@ -508,14 +508,14 @@ test("article: the repeated denial dialog switches to an inline preview without 
   await page.settle();
   assert.equal(page.disclosure().collapsed, true);
   assert.equal(page.nodes((node) => node.props?.role === "dialog").length, 0);
-  assert.ok(articleButton(page, "重新获取位置"));
+  assert.ok(articleButton(page, "展开"));
   assert.equal(page.locationRequests.length, 1);
   assert.equal(page.networkRequests.length, 0);
   assert.equal(page.storage.has("shenxiang_location"), false);
   assert.ok(page.nodes((node) => node.props?.role === "status" && /允许位置访问后/.test(text(node))).length);
   assert.equal(page.nodes((node) => /1\/3|2\/3|一半|三分|50%/.test(text(node))).length, 0);
 
-  page.action(articleButton(page, "重新获取位置"));
+  page.action(articleButton(page, "展开"));
   assert.equal(page.locationRequests.length, 2, "Only the explicit inline retry requests location");
   page.fail(1);
   await page.advance(60000);
@@ -545,7 +545,7 @@ test("article: permission grants require manual expansion and revocation refolds
   assert.equal(page.permission.listenerCount("change"), 1, "Permission monitoring remains active to detect later revocation");
   await page.permissionChange("denied");
   assert.equal(page.disclosure().collapsed, true);
-  assert.ok(articleButton(page, "重新获取位置"));
+  assert.ok(articleButton(page, "展开"));
   await page.permissionChange("granted");
   assert.equal(page.disclosure().collapsed, true);
   assert.ok(articleButton(page, "展开"));
@@ -579,27 +579,26 @@ for (const signal of ["focus", "visibility"]) {
 }
 
 for (const [label, options] of [
+  ["supported Permissions API", {}],
   ["unsupported Permissions API", { permissionsSupported: false }],
   ["rejected permission query", { permissionQuery: async () => { throw new Error("fixture unsupported query"); } }],
 ]) {
-  test(`article: ${label} allows manual expansion after location success without waiting for storage`, async (t) => {
+  test(`article: ${label} expands after the explicit expand request succeeds without waiting for storage`, async (t) => {
     const page = mount("app/articles/[id]/ArticleLocationGate.tsx", options);
     t.after(() => page.dispose());
     await collapseArticle(page);
     await page.focus();
     assert.equal(page.disclosure().collapsed, true);
     assert.equal(page.locationRequests.length, 1);
-    page.action(articleButton(page, "重新获取位置"));
+    const expandButton = articleButton(page, "展开");
+    assert.equal(text(expandButton), "", "The expand button is icon-only even before authorization");
+    assert.equal(expandButton.props.children.type, "svg");
+    page.action(expandButton);
+    page.action(expandButton);
     assert.equal(page.locationRequests.length, 2);
+    assert.equal(page.disclosure().collapsed, true, "Waiting for authorization must not reveal content");
     const pending = page.succeed();
-    assert.equal(page.disclosure().collapsed, true, "Location success alone must not expand the article");
-    assert.ok(articleButton(page, "展开"));
-    assert.equal(articleButton(page, "展开").props.disabled, false);
-    assert.equal(text(articleButton(page, "展开")), "", "The expand button must be icon-only with an accessible name");
-    assert.equal(articleButton(page, "展开").props.children.type, "svg");
-    assert.equal(articleButton(page, "展开").props.children.props["aria-hidden"], "true");
-    page.action(articleButton(page, "展开"));
-    assert.equal(page.disclosure().collapsed, false, "The explicit expand action shows the remaining content");
+    assert.equal(page.disclosure().collapsed, false, "The explicit expand request completes only after location success");
     await pending;
     await page.settle();
     assert.equal(page.disclosure().collapsed, false, "A location-storage failure must not refold content");
@@ -609,6 +608,28 @@ for (const [label, options] of [
     await page.advance(3000);
     assert.equal(page.nodes((node) => node.props?.role === "dialog").length, 0);
     assert.equal(page.storage.has("shenxiang_location"), false);
+  });
+}
+
+for (const errorCode of [1, 2, 3]) {
+  test(`article: expanding without authorization stays folded on location error ${errorCode}`, async (t) => {
+    const page = mount("app/articles/[id]/ArticleLocationGate.tsx");
+    t.after(() => page.dispose());
+    await page.advance(0);
+    const button = articleButton(page, "展开");
+    assert.equal(button.props.children.type, "svg");
+    page.action(button);
+    page.action(button);
+    assert.equal(page.locationRequests.length, 1);
+    assert.equal(page.disclosure().collapsed, true);
+    assert.equal(articleButton(page, "展开").props.disabled, true);
+    page.fail(errorCode);
+    assert.equal(page.disclosure().collapsed, true);
+    assert.equal(page.storage.has(authorizedAtKey), false);
+    assert.equal(articleButton(page, "展开").props.disabled, false);
+    assert.equal(page.networkRequests.length, 0);
+    await page.advance(3000);
+    assert.equal(page.disclosure().collapsed, true);
   });
 }
 

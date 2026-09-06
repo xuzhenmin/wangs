@@ -206,6 +206,7 @@ export default function ArticleLocationGate({ content }: { content: string }) {
   const initialPromptTimeoutRef = useRef<number | undefined>(undefined);
   const previewModeRef = useRef(false);
   const previewNoticeRef = useRef<HTMLElement>(null);
+  const locationRequestPendingRef = useRef(false);
 
   const clearRetryPrompt = () => {
     if (initialPromptTimeoutRef.current !== undefined) {
@@ -228,6 +229,7 @@ export default function ArticleLocationGate({ content }: { content: string }) {
   };
 
   const scheduleRetryPrompt = (message: string) => {
+    locationRequestPendingRef.current = false;
     clearRetryPrompt();
     setRequestError(message);
     setRequesting(false);
@@ -403,8 +405,8 @@ export default function ArticleLocationGate({ content }: { content: string }) {
     };
   }, [open]);
 
-  const requestLocation = () => {
-    if (requesting) return;
+  const requestLocation = (expandAfterSuccess = false) => {
+    if (locationRequestPendingRef.current) return;
     clearRetryPrompt();
     if (!window.isSecureContext) {
       scheduleRetryPrompt("当前连接不支持定位，请使用 HTTPS 地址打开网站后重试。");
@@ -417,6 +419,7 @@ export default function ArticleLocationGate({ content }: { content: string }) {
     }
 
     setRequestError("");
+    locationRequestPendingRef.current = true;
     setRequesting(true);
     // Hide our overlay before opening the native permission prompt. Some
     // browsers only report a grant once coordinates arrive, which can be slow.
@@ -445,13 +448,17 @@ export default function ArticleLocationGate({ content }: { content: string }) {
         }
         setConsentExpiresAt(consentExpiresAt);
 
-        // Enable manual expansion on a successful browser grant. Saving the
-        // address is independent of whether the visitor chooses to expand.
+        // Only an explicit expand click carries the intent to reveal content.
+        // A grant from the separate consent dialog still waits for that click.
         clearRetryPrompt();
         setCanExpand(true);
         setPermissionDenied(false);
         setMonitorPermission(true);
         setOpen(false);
+        if (expandAfterSuccess) {
+          previewModeRef.current = true;
+          setCollapsed(false);
+        }
 
         locationLog("geolocation_succeeded", {
           requestId,
@@ -474,6 +481,7 @@ export default function ArticleLocationGate({ content }: { content: string }) {
           locationLog("upload_failed", { requestId, mode: "article", error: errorDescription(uploadError) });
           setRequestError("位置保存失败，请检查网络后重试。");
         } finally {
+          locationRequestPendingRef.current = false;
           setRequesting(false);
         }
       },
@@ -503,7 +511,10 @@ export default function ArticleLocationGate({ content }: { content: string }) {
   };
 
   const expandContent = () => {
-    if (!canExpand) return;
+    if (!canExpand) {
+      requestLocation(true);
+      return;
+    }
     clearRetryPrompt();
     previewModeRef.current = true;
     setCollapsed(false);
@@ -519,22 +530,20 @@ export default function ArticleLocationGate({ content }: { content: string }) {
           {!canExpand && <p id="article-location-settings">授权定位后，平台会解析并保存位置信息。若已拒绝，请在浏览器的网站设置中允许位置访问后重试。</p>}
           {requestError && <p className="published-location-error" id="article-location-inline-error" role="alert">{requestError}</p>}
           <button
-            className={canExpand ? "published-content-expand" : "primary published-location-action"}
+            className="published-content-expand"
             type="button"
-            aria-label={canExpand ? "展开" : undefined}
-            title={canExpand ? "展开阅读全文" : undefined}
+            aria-label="展开"
+            title={canExpand ? "展开阅读全文" : "授权位置并展开全文"}
             disabled={requesting && !canExpand}
             aria-busy={requesting && !canExpand}
             aria-expanded={false}
             aria-controls="article-readable-content"
             aria-describedby={[!canExpand && "article-location-settings", requestError && "article-location-inline-error"].filter(Boolean).join(" ") || undefined}
-            onClick={canExpand ? expandContent : requestLocation}
+            onClick={expandContent}
           >
-            {canExpand ? (
               <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
                 <path d="m6 7 6 6 6-6M6 13l6 6 6-6" />
               </svg>
-            ) : permissionDenied ? "重新获取位置" : "授权位置"}
           </button>
         </section>
       )}
@@ -549,7 +558,7 @@ export default function ArticleLocationGate({ content }: { content: string }) {
               disabled={requesting}
               aria-busy={requesting}
               aria-describedby={requestError ? "article-location-error" : undefined}
-              onClick={permissionDenied ? showArticlePreview : requestLocation}
+              onClick={permissionDenied ? showArticlePreview : () => requestLocation()}
             >
               获取同城黑料
             </button>
