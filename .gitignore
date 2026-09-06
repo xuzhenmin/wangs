@@ -29,10 +29,15 @@ data/*.sqlite
 data/*.sqlite-shm
 data/*.sqlite-wal
 scraped-pages/
-# Imported source images stay local. Branded article images live in
-# public/article-images/ and are intentionally tracked by Git.
-public/uploads/articles/*
-!public/uploads/articles/.gitkeep
+# Article media is local working data, not source code. Published images live
+# on OSS; ignore originals, processed images, previews, and processing manifests.
+/public/uploads/articles/*
+!/public/uploads/articles/.gitkeep
+/public/article-images/*
+!/public/article-images/.gitkeep
+/public/scraped-article/
+# Retired generated illustration from the old static article.
+/public/editorial-dispute-v1.png
 
 # Test output and tool caches
 coverage/

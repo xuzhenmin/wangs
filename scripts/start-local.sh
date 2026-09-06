@@ -9,6 +9,26 @@ SITE_PORT="${LOCAL_SITE_PORT:-3217}"
 SITE_HOST="${LOCAL_SITE_HOST:-127.0.0.1}"
 SERVICE_LABEL="com.shenxiang.city-news.local"
 SITE_URL_HOST="$SITE_HOST"
+SKIP_BUILD=false
+
+for argument in "$@"; do
+  case "$argument" in
+    --skip-build) SKIP_BUILD=true ;;
+    --help|-h)
+      echo "用法：bash scripts/start-local.sh [--skip-build]"
+      echo "--skip-build 使用已有 .next 构建启动；仅在代码和依赖与构建匹配时使用。"
+      echo "LOCAL_BUILD_HEAP_MB 可限制构建阶段 Node 堆（MiB），不会改变网站运行时配置。"
+      exit 0
+      ;;
+    *) echo "未知参数：$argument" >&2; exit 2 ;;
+  esac
+done
+if [[ -n "${LOCAL_BUILD_HEAP_MB:-}" ]] && {
+  [[ ! "$LOCAL_BUILD_HEAP_MB" =~ ^[1-9][0-9]{1,4}$ ]] || (( LOCAL_BUILD_HEAP_MB < 128 ));
+}; then
+  echo "LOCAL_BUILD_HEAP_MB 必须是至少 128 的整数（MiB）。" >&2
+  exit 2
+fi
 
 if [[ "$SITE_HOST" == "0.0.0.0" || "$SITE_HOST" == "::" ]]; then
   SITE_URL_HOST="127.0.0.1"
@@ -99,13 +119,26 @@ if [[ ! -x "$PROJECT_DIR/node_modules/.bin/next" ]] || ! npm ls --depth=0 --sile
   if [[ -x "$PROJECT_NODE_DIR/node" ]]; then
     echo "  export PATH=\"$PROJECT_NODE_DIR:\$PATH\"" >&2
   fi
-  echo "  npm ci --no-audit --no-fund --maxsockets=1" >&2
+  echo "  bash scripts/install-low-memory.sh" >&2
+  echo "可先用 bash scripts/install-low-memory.sh --check 查看内存和 Swap。" >&2
   echo "安装完成后，再次运行当前启动命令。" >&2
   exit 1
 fi
 
-echo "正在构建 Next.js 生产版本…"
-npm run build
+if $SKIP_BUILD; then
+  if [[ ! -s "$PROJECT_DIR/.next/BUILD_ID" || ! -f "$PROJECT_DIR/.next/required-server-files.json" ]]; then
+    echo "没有可用的生产构建，无法跳过构建。请先运行 npm run build。" >&2
+    exit 1
+  fi
+  echo "使用已有生产构建启动（未编译最新代码）。"
+else
+  echo "正在构建 Next.js 生产版本…"
+  if [[ -n "${LOCAL_BUILD_HEAP_MB:-}" ]]; then
+    NODE_OPTIONS="${NODE_OPTIONS:-} --max-old-space-size=$LOCAL_BUILD_HEAP_MB" npm run build
+  else
+    npm run build
+  fi
+fi
 
 echo "正在以 Node.js 模式后台启动网站…"
 if can_use_launchd; then

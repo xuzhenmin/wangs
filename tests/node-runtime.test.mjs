@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -44,10 +44,18 @@ test("serves the site and persists consented locations with the Node runtime", a
   const origin = `http://127.0.0.1:${port}`;
   const output = [];
   const ossUploads = [];
+  const ossFailedUploads = [];
+  let rejectOssUploads = false;
   const ossServer = createHttpServer((request, response) => {
     const chunks = [];
     request.on("data", (chunk) => chunks.push(chunk));
     request.on("end", () => {
+      if (rejectOssUploads) {
+        ossFailedUploads.push({ method: request.method, url: request.url });
+        response.writeHead(403, { "Content-Type": "application/xml" });
+        response.end("<Error><Code>AccessDenied</Code><Message>Fixture upload denied</Message></Error>");
+        return;
+      }
       ossUploads.push({ method: request.method, url: request.url, body: Buffer.concat(chunks) });
       response.writeHead(200, {
         ETag: '"test-etag"',
@@ -257,6 +265,51 @@ test("serves the site and persists consented locations with the Node runtime", a
 
   const sourceUrl = `/article-images/${articleId}/${processedFilename}`;
   const ossImageUrl = `${ossPublicBaseUrl}/article-images/${articleId}/${processedFilename}`;
+
+  // Direct creation must not bypass image validation or insert a partial article.
+  for (const imageSource of [
+    "https://external.example/image.png",
+    "blob:https://external.example/image",
+    `/uploads/articles/${articleId}/${processedFilename}`,
+    sourceUrl,
+    ossImageUrl,
+  ]) {
+    const rejectedCreate = await fetch(`${origin}/api/admin/articles`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({
+        title: "不应写入的未处理图片文章",
+        summary: "直接发布不能绕过 OSS 校验",
+        content: `<p>未处理图片</p><img src="${imageSource}">`,
+        status: "published",
+      }),
+    });
+    assert.equal(rejectedCreate.status, 409);
+    assert.equal((await rejectedCreate.json()).error, "oss-image-validation");
+  }
+  const articlesAfterRejectedCreates = await fetch(`${origin}/api/admin/articles`, { headers: { Cookie: cookie } });
+  assert.deepEqual((await articlesAfterRejectedCreates.json()).articles, [draftPayload.article]);
+  assert.equal(ossUploads.length, 0);
+
+  rejectOssUploads = true;
+  const failedDraftPublication = await fetch(`${origin}/api/admin/articles/${articleId}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", Cookie: cookie },
+    body: JSON.stringify({
+      title: "OSS 失败不应发布",
+      summary: "保留原草稿",
+      content: `<p>尚未上传的正文</p><img src="${sourceUrl}">`,
+      status: "published",
+    }),
+  });
+  assert.equal(failedDraftPublication.status, 502);
+  assert.equal((await failedDraftPublication.json()).error, "oss-image-upload");
+  assert.equal(ossFailedUploads.length, 3);
+  const articlesAfterFailedPublication = await fetch(`${origin}/api/admin/articles`, { headers: { Cookie: cookie } });
+  assert.deepEqual((await articlesAfterFailedPublication.json()).articles, [draftPayload.article]);
+  assert.equal((await fetch(`${origin}/articles/${articleId}`)).status, 404);
+  rejectOssUploads = false;
+
   const publishResponse = await fetch(`${origin}/api/admin/articles/${articleId}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json", Cookie: cookie },
@@ -277,6 +330,46 @@ test("serves the site and persists consented locations with the Node runtime", a
   assert.equal(ossUploads[0].url, `/article-images/${articleId}/${processedFilename}`);
   assert.deepEqual(ossUploads[0].body, imageBytes);
 
+  rejectOssUploads = true;
+  const failedPublishedUpdate = await fetch(`${origin}/api/admin/articles/${articleId}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", Cookie: cookie },
+    body: JSON.stringify({
+      title: "OSS 失败不应覆盖已发布文章",
+      summary: "保留线上可用版本",
+      content: `<p>不应落库的新正文</p><img src="${sourceUrl}">`,
+      status: "published",
+    }),
+  });
+  assert.equal(failedPublishedUpdate.status, 502);
+  assert.equal((await failedPublishedUpdate.json()).error, "oss-image-upload");
+  assert.equal(ossFailedUploads.length, 6);
+  const articlesAfterFailedUpdate = await fetch(`${origin}/api/admin/articles`, { headers: { Cookie: cookie } });
+  assert.deepEqual((await articlesAfterFailedUpdate.json()).articles, [publishPayload.article]);
+  rejectOssUploads = false;
+
+  const rejectedLocalSync = await fetch(`${origin}/api/article-sync`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${articleSyncSecret}` },
+    body: JSON.stringify({ article: { ...publishPayload.article, content: `<img src="${sourceUrl}">` } }),
+  });
+  assert.equal(rejectedLocalSync.status, 422);
+  assert.equal((await rejectedLocalSync.json()).error, "invalid-article-sync");
+
+  // Simulate a fresh checkout: publishing and remote synchronization must use OSS
+  // URLs without reopening local files or restoring image bytes on the receiver.
+  await rm(sourceImageDirectory, { recursive: true });
+  const republishOssOnlyResponse = await fetch(`${origin}/api/admin/articles/${articleId}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", Cookie: cookie },
+    body: JSON.stringify(publishPayload.article),
+  });
+  assert.equal(republishOssOnlyResponse.status, 200);
+  const republishOssOnlyPayload = await republishOssOnlyResponse.json();
+  assert.equal(republishOssOnlyPayload.uploadedImageCount, 0);
+  assert.equal(republishOssOnlyPayload.article.content, publishPayload.article.content);
+  assert.equal(ossUploads.length, 1);
+
   const manualSyncResponse = await fetch(`${origin}/api/admin/articles/${articleId}/sync`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Cookie: cookie },
@@ -287,6 +380,8 @@ test("serves the site and persists consented locations with the Node runtime", a
   assert.equal(manualSyncPayload.remoteSync.status, "synced");
   assert.equal(manualSyncPayload.remoteSync.articleUrl, `${origin}/articles/${articleId}`);
   assert.equal(ossUploads.length, 1);
+  await assert.rejects(access(sourceImageDirectory), { code: "ENOENT" });
+  await assert.rejects(access(path.join(projectRoot, "public", "uploads", "articles", articleId)), { code: "ENOENT" });
 
   const publishedPage = await fetch(`${origin}/articles/${articleId}`);
   assert.equal(publishedPage.status, 200);
