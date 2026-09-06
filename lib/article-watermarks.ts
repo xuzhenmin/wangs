@@ -108,7 +108,9 @@ export async function processArticleWatermark(articleId: string, source: string,
     const input = await readRawSource(articleId, source);
     if (signal.aborted) throw new Error("处理已取消。");
     const result = await new Promise<WatermarkResult & { bytes?: Uint8Array }>((resolve, reject) => {
-      const worker = new Worker(path.join(root(), "scripts", "watermark-worker.mjs"), {
+      // This is a deployed Node script, not a bundled worker entry. Keep the
+      // absolute runtime path out of Turbopack's relative module lookup map.
+      const worker = new Worker(/* turbopackIgnore: true */ path.join(root(), "scripts", "watermark-worker.mjs"), {
         workerData: { input, template, settings },
         resourceLimits: { maxOldGenerationSizeMb: 192 },
       });

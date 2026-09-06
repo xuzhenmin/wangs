@@ -32,7 +32,12 @@ export const articleViewEvents = sqliteTable("article_view_events", {
   id: text("id").primaryKey(),
   articleId: text("article_id").notNull(),
   visitedAt: integer("visited_at").notNull(),
-}, (table) => [index("article_view_events_article_idx").on(table.articleId, table.visitedAt)]);
+  visitorKey: text("visitor_key"),
+}, (table) => [
+  index("article_view_events_article_idx").on(table.articleId, table.visitedAt),
+  index("article_view_events_visitor_idx").on(table.articleId, table.visitorKey, table.visitedAt),
+  index("article_view_events_unique_visitor_idx").on(table.visitorKey),
+]);
 
 export const imageImportTasks = sqliteTable("image_import_tasks", {
   id: text("id").primaryKey(),

@@ -33,5 +33,6 @@ test("article view tracker counts mounted pages once and ignores reporting failu
   assert.equal(calls[1][0], "/api/articles/second/view");
   assert.equal(calls[0][1].method, "POST");
   assert.equal(calls[0][1].keepalive, true);
+  assert.equal(calls[0][1].credentials, "same-origin");
   assert.deepEqual(Object.keys(JSON.parse(calls[0][1].body)), ["eventId"], "Never transmit location or device information");
 });

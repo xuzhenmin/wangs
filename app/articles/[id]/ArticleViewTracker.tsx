@@ -8,7 +8,7 @@ export default function ArticleViewTracker({ articleId }: { articleId: string })
     if (reportedArticle.current === articleId) return;
     reportedArticle.current = articleId;
     void fetch(`/api/articles/${encodeURIComponent(articleId)}/view`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
+      method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ eventId: crypto.randomUUID() }), keepalive: true,
     }).catch(() => { /* Statistics must never interrupt reading. */ });
   }, [articleId]);

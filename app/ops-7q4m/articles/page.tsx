@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ArticleListResult } from "../../../lib/article-management";
+import ArticleVisitors from "./ArticleVisitors";
 
 function formatTime(value: number | null) {
   if (value === null) return "暂无访问";
@@ -25,7 +26,9 @@ export default function ArticleManagementPage() {
   const [page, setPage] = useState(1);
   const [revision, setRevision] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [visitorArticle, setVisitorArticle] = useState<{ id: string; title: string } | null>(null);
   const requestRef = useRef<AbortController | null>(null);
+  const visitorsUnauthorized = useCallback(() => { setVisitorArticle(null); setData(null); setAuth("required"); }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -37,7 +40,7 @@ export default function ArticleManagementPage() {
       void (async () => {
         const response = await fetch(`/api/admin/articles/list?${params}`, { cache: "no-store", signal: AbortSignal.any([controller.signal, AbortSignal.timeout(10000)]) });
         if (controller.signal.aborted) return;
-        if (response.status === 401) { setAuth("required"); setData(null); return; }
+        if (response.status === 401) { setAuth("required"); setData(null); setVisitorArticle(null); return; }
         if (!response.ok) throw new Error("list-unavailable");
         const result = await response.json() as ArticleListResult;
         if (controller.signal.aborted) return;
@@ -70,7 +73,7 @@ export default function ArticleManagementPage() {
     try {
       const response = await fetch("/api/admin/logout", { method: "POST" });
       if (!response.ok) throw new Error("logout-failed");
-      setData(null); setAuth("required"); setPassword(""); setError("");
+      setData(null); setAuth("required"); setPassword(""); setError(""); setVisitorArticle(null);
     } catch { setError("退出失败，请重试。"); }
   }
 
@@ -119,24 +122,25 @@ export default function ArticleManagementPage() {
           <div><span>已发布</span><b>{data?.stats.published ?? 0}</b><small>可通过内容链接访问</small></div>
           <div><span>草稿</span><b>{data?.stats.drafts ?? 0}</b><small>尚未对外发布</small></div>
           <div><span>累计访问次数（PV）</span><b>{(data?.stats.views ?? 0).toLocaleString("zh-CN")}</b><small>本站文章页面访问累计</small></div>
+          <div><span>独立访客（UV）</span><b>{(data?.stats.visitors ?? 0).toLocaleString("zh-CN")}</b><small>跨文章去重的匿名浏览器数</small></div>
         </div>
         <section className="ops-data-card">
           <div className="ops-data-head"><div><h2>全部文章</h2><p>时间均为北京时间；访问统计从此功能上线后开始累计。</p></div></div>
           <form className="article-list-filters" onSubmit={event => { event.preventDefault(); setPage(1); setQuery(search); }}>
             <input aria-label="搜索文章标题" placeholder="搜索文章标题" value={search} maxLength={160} onChange={event => setSearch(event.target.value)} />
             <select aria-label="文章状态" value={status} onChange={event => { setStatus(event.target.value); setPage(1); }}><option value="all">全部状态</option><option value="published">已发布</option><option value="draft">草稿</option></select>
-            <select aria-label="排序方式" value={sort} onChange={event => { setSort(event.target.value); setPage(1); }}><option value="updated">最近修改优先</option><option value="created">最新创建优先</option><option value="views">访问最多优先</option></select>
+            <select aria-label="排序方式" value={sort} onChange={event => { setSort(event.target.value); setPage(1); }}><option value="updated">最近修改优先</option><option value="created">最新创建优先</option><option value="views">访问最多优先</option><option value="visitors">访客最多优先</option></select>
             <button type="submit">搜索</button>
           </form>
           <div className="records-table-wrap" aria-busy={loading}>
             <table className="records-table article-management-table">
-              <thead><tr><th scope="col">文章标题</th><th scope="col">状态</th><th scope="col">创建时间</th><th scope="col">修改时间</th><th scope="col">访问次数</th><th scope="col">最近访问</th><th scope="col">操作</th></tr></thead>
+              <thead><tr><th scope="col">文章标题</th><th scope="col">状态</th><th scope="col">创建时间</th><th scope="col">修改时间</th><th scope="col">访问次数（PV）</th><th scope="col">独立访客（UV）</th><th scope="col">最近访问</th><th scope="col">操作</th></tr></thead>
               <tbody>{data?.articles.map(article => <tr key={article.id}>
                 <td className="article-list-title"><b>{article.title}</b><small>{article.id}</small></td>
                 <td><span className={article.status === "published" ? "record-active" : "article-draft-tag"}>{article.status === "published" ? "已发布" : "草稿"}</span></td>
                 <td>{formatTime(article.createdAt)}</td><td>{formatTime(article.updatedAt)}</td>
-                <td className="article-view-count">{article.viewCount.toLocaleString("zh-CN")}</td><td>{formatTime(article.lastViewedAt)}</td>
-                <td><div className="article-list-actions"><Link href={`/ops-7q4m/editor?id=${encodeURIComponent(article.id)}`}>编辑</Link>{article.status === "published" && <a href={`/articles/${article.id}`} target="_blank" rel="noopener noreferrer">查看文章 ↗</a>}</div></td>
+                <td className="article-view-count">{article.viewCount.toLocaleString("zh-CN")}</td><td>{article.visitorCount.toLocaleString("zh-CN")}</td><td>{formatTime(article.lastViewedAt)}</td>
+                <td><div className="article-list-actions"><button type="button" aria-label={`查看《${article.title}》访问明细`} onClick={() => setVisitorArticle({ id: article.id, title: article.title })}>访问明细</button><Link href={`/ops-7q4m/editor?id=${encodeURIComponent(article.id)}`}>编辑</Link>{article.status === "published" && <a href={`/articles/${article.id}`} target="_blank" rel="noopener noreferrer">查看文章 ↗</a>}</div></td>
               </tr>)}</tbody>
             </table>
             {!data?.articles.length && <p className="ops-data-empty">{loading ? "正在加载…" : "暂无符合条件的文章"}</p>}
@@ -146,8 +150,9 @@ export default function ArticleManagementPage() {
             <div><button disabled={loading || (data?.page ?? 1) <= 1} onClick={() => setPage((data?.page ?? 1) - 1)}>上一页</button><button disabled={loading || !data || data.page * data.pageSize >= data.total} onClick={() => setPage((data?.page ?? 1) + 1)}>下一页</button></div>
           </div>
         </section>
-        <p className="article-list-note">PV 按文章页面打开次数统计，刷新或重新打开会增加；不是独立访客数。后台编辑预览、链接预加载不计入，各部署环境分别累计。</p>
+        <p className="article-list-note">PV 按页面打开次数统计，刷新或重新打开会增加；UV 按匿名访客编号去重，不是真实人数。编号 Cookie 保存 30 天，清除 Cookie、无痕或换浏览器可能算作新访客。历史未识别记录只计 PV；启用“不跟踪”隐私信号时不设置访客编号。后台编辑预览、链接预加载不计入，各部署环境分别累计。</p>
       </section>
+      {visitorArticle && <ArticleVisitors key={visitorArticle.id} articleId={visitorArticle.id} title={visitorArticle.title} onClose={() => setVisitorArticle(null)} onUnauthorized={visitorsUnauthorized} />}
     </main>
   );
 }

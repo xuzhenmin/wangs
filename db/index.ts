@@ -50,7 +50,8 @@ export function getDb() {
     CREATE TABLE IF NOT EXISTS article_view_events (
       id TEXT PRIMARY KEY NOT NULL,
       article_id TEXT NOT NULL,
-      visited_at INTEGER NOT NULL
+      visited_at INTEGER NOT NULL,
+      visitor_key TEXT
     );
     CREATE INDEX IF NOT EXISTS article_view_events_article_idx
       ON article_view_events (article_id, visited_at);
@@ -84,5 +85,17 @@ export function getDb() {
     CREATE INDEX IF NOT EXISTS image_import_items_task_idx
       ON image_import_items (task_id, image_order);
   `);
+  // Additive, idempotent upgrade: preserve historical PV with a NULL visitor.
+  // The write lock also prevents two server workers racing the ALTER TABLE.
+  database.exec("BEGIN IMMEDIATE");
+  try {
+    const columns = database.prepare("PRAGMA table_info(article_view_events)").all();
+    if (!columns.some(column => column.name === "visitor_key")) database.exec("ALTER TABLE article_view_events ADD COLUMN visitor_key TEXT");
+    database.exec("CREATE INDEX IF NOT EXISTS article_view_events_visitor_idx ON article_view_events (article_id, visitor_key, visited_at)");
+    database.exec("CREATE INDEX IF NOT EXISTS article_view_events_unique_visitor_idx ON article_view_events (visitor_key)");
+    database.exec("COMMIT");
+  } catch (error) {
+    database.exec("ROLLBACK"); database.close(); database = undefined; throw error;
+  }
   return database;
 }

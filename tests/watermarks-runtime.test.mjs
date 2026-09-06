@@ -65,8 +65,9 @@ test('admin watermark API: access control, preservation, live image serving and 
   assert.equal((await post({ ...body, content: `<img src="${source}">`.repeat(101) })).status, 422);
   for (const count of [69, 100]) {
     const accepted = await post({ ...body, content: `<img src="${source}">`.repeat(count) });
-    assert.equal(accepted.status, 200, `${count} image tags must pass the new limit`);
-    assert.equal((await accepted.json()).status, 'processed');
+    const acceptedBody = await accepted.json();
+    assert.equal(accepted.status, 200, `${count} image tags must pass the new limit: ${JSON.stringify(acceptedBody)}`);
+    assert.equal(acceptedBody.status, 'processed');
   }
   for (const invalid of ['http://127.0.0.1/secret.png', `/uploads/articles/${crypto.randomUUID()}/${filename}`, `/uploads/articles/${article.id}/../../.env.local`, `/article-images/${article.id}/${filename}`]) {
     assert.equal((await post({ ...body, source: invalid, content: `<img src="${invalid}">` })).status, 422);
