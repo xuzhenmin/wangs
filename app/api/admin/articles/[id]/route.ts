@@ -1,6 +1,5 @@
 import { verifyAdminRequest } from "../../../../../lib/admin-auth";
-import { ExternalImagesPendingError, parseArticleInput, updateArticle } from "../../../../../lib/articles";
-import { ArticleImagePublicationError } from "../../../../../lib/oss-article-images";
+import { parseArticleInput, updateArticle } from "../../../../../lib/articles";
 
 export async function PUT(request: Request, context: { params: Promise<{ id: string }> }) {
   if (!(await verifyAdminRequest(request))) {
@@ -13,14 +12,7 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
     const result = await updateArticle(id, input);
     if (!result) return Response.json({ error: "article-not-found" }, { status: 404 });
     return Response.json(result, { headers: { "Cache-Control": "no-store" } });
-  } catch (error) {
-    if (error instanceof ArticleImagePublicationError) {
-      const status = error.kind === "validation" ? 409 : error.kind === "configuration" ? 503 : 502;
-      return Response.json({ error: `oss-image-${error.kind}`, detail: error.message }, { status, headers: { "Cache-Control": "no-store" } });
-    }
-    if (error instanceof ExternalImagesPendingError) {
-      return Response.json({ error: "external-images-pending", detail: error.message }, { status: 409, headers: { "Cache-Control": "no-store" } });
-    }
+  } catch {
     return Response.json({ error: "article-update-failed" }, { status: 500, headers: { "Cache-Control": "no-store" } });
   }
 }

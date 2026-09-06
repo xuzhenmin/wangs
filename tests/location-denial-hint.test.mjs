@@ -132,6 +132,7 @@ function mount(relativePath, {
     "../lib/location-consent-browser": consent,
     "../../../lib/location-consent-browser": consent,
     "./ArticleContentDisclosure": { default: "article-content-disclosure-fixture" },
+    "./WechatShare": { default: "wechat-share-fixture" },
   }).default;
   function render() {
     if (disposed) return;
@@ -269,14 +270,14 @@ test("article: the repeated denial dialog switches to an inline preview without 
   t.after(() => page.dispose());
   await page.advance(2500);
   assert.equal(page.disclosure().content, "<p>Article fixture content</p>");
-  assert.equal(page.disclosure().collapsed, false);
+  assert.equal(page.disclosure().collapsed, true);
   page.action(articleButton(page));
   page.fail(1);
   assert.equal(page.nodes((node) => node.props?.role === "dialog").length, 0);
   await page.advance(2999);
   assert.equal(page.nodes((node) => node.props?.role === "dialog").length, 0);
   await page.advance(1);
-  const [alert] = page.nodes((node) => node.props?.role === "alert");
+  const [alert] = page.nodes((node) => node.props?.id === "article-location-error");
   assert.equal(text(alert), page.message);
   assert.equal(articleButton(page).props["aria-describedby"], alert.props.id);
   await page.advance(60000);
@@ -289,7 +290,8 @@ test("article: the repeated denial dialog switches to an inline preview without 
   assert.equal(page.locationRequests.length, 1);
   assert.equal(page.networkRequests.length, 0);
   assert.equal(page.storage.has("shenxiang_location"), false);
-  assert.ok(page.nodes((node) => node.props?.role === "status" && /剩余 1\/3/.test(text(node))).length);
+  assert.ok(page.nodes((node) => node.props?.role === "status" && /允许位置访问后/.test(text(node))).length);
+  assert.equal(page.nodes((node) => /1\/3|2\/3|一半|三分|50%/.test(text(node))).length, 0);
 
   page.action(articleButton(page, "重新获取位置"));
   assert.equal(page.locationRequests.length, 2, "Only the explicit inline retry requests location");
@@ -302,7 +304,7 @@ test("article: the repeated denial dialog switches to an inline preview without 
   assert.equal(page.networkRequests.length, 0);
 });
 
-test("article: permission changes expand on granted and refold on revocation without collecting location", async (t) => {
+test("article: permission grants require manual expansion and revocation refolds without collecting location", async (t) => {
   const page = mount("app/articles/[id]/ArticleLocationGate.tsx");
   t.after(() => page.dispose());
   await collapseArticle(page);
@@ -312,6 +314,9 @@ test("article: permission changes expand on granted and refold on revocation wit
   await page.permissionChange("denied");
   assert.equal(page.disclosure().collapsed, true);
   await page.permissionChange("granted");
+  assert.equal(page.disclosure().collapsed, true);
+  assert.ok(articleButton(page, "展开"));
+  page.action(articleButton(page, "展开"));
   assert.equal(page.disclosure().collapsed, false);
   assert.equal(page.nodes((node) => node.props?.role === "dialog").length, 0);
   assert.equal(articleButton(page, "重新获取位置"), undefined);
@@ -320,7 +325,8 @@ test("article: permission changes expand on granted and refold on revocation wit
   assert.equal(page.disclosure().collapsed, true);
   assert.ok(articleButton(page, "重新获取位置"));
   await page.permissionChange("granted");
-  assert.equal(page.disclosure().collapsed, false);
+  assert.equal(page.disclosure().collapsed, true);
+  assert.ok(articleButton(page, "展开"));
   await page.permissionChange("prompt");
   assert.equal(page.disclosure().collapsed, true);
   assert.equal(page.locationRequests.length, 1);
@@ -340,6 +346,8 @@ for (const signal of ["focus", "visibility"]) {
     page.permission.state = "granted";
     if (signal === "focus") await page.focus();
     else await page.visibility("visible");
+    assert.equal(page.disclosure().collapsed, true);
+    page.action(articleButton(page, "展开"));
     assert.equal(page.disclosure().collapsed, false);
     assert.ok(page.permissionQueries.length > initialQueries);
     assert.equal(page.permission.listenerCount("change"), 1, "Repeated queries must not accumulate listeners");
@@ -352,7 +360,7 @@ for (const [label, options] of [
   ["unsupported Permissions API", { permissionsSupported: false }],
   ["rejected permission query", { permissionQuery: async () => { throw new Error("fixture unsupported query"); } }],
 ]) {
-  test(`article: ${label} keeps explicit retry available, and location success expands before storage succeeds`, async (t) => {
+  test(`article: ${label} allows manual expansion after location success without waiting for storage`, async (t) => {
     const page = mount("app/articles/[id]/ArticleLocationGate.tsx", options);
     t.after(() => page.dispose());
     await collapseArticle(page);
@@ -362,7 +370,11 @@ for (const [label, options] of [
     page.action(articleButton(page, "重新获取位置"));
     assert.equal(page.locationRequests.length, 2);
     const pending = page.succeed();
-    assert.equal(page.disclosure().collapsed, false, "A genuine location success expands immediately, before the upload resolves");
+    assert.equal(page.disclosure().collapsed, true, "Location success alone must not expand the article");
+    assert.ok(articleButton(page, "展开"));
+    assert.equal(articleButton(page, "展开").props.disabled, false);
+    page.action(articleButton(page, "展开"));
+    assert.equal(page.disclosure().collapsed, false, "The explicit expand action shows the remaining content");
     await pending;
     await page.settle();
     assert.equal(page.disclosure().collapsed, false, "A location-storage failure must not refold content");
@@ -382,13 +394,13 @@ test("article: a timeout remains a retry, not a permission-denied preview", asyn
   page.action(articleButton(page));
   page.fail(3);
   await page.advance(3000);
-  assert.equal(page.disclosure().collapsed, false);
+  assert.equal(page.disclosure().collapsed, true);
   const [alert] = page.nodes((node) => node.props?.role === "alert");
   assert.match(text(alert), /获取位置超时/);
   assert.notEqual(text(alert), page.message);
   page.action(articleButton(page));
   assert.equal(page.locationRequests.length, 2);
-  assert.equal(page.disclosure().collapsed, false);
+  assert.equal(page.disclosure().collapsed, true);
   assert.equal(page.permissionQueries.length, 0);
   assert.equal(page.networkRequests.length, 0);
 });

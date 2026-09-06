@@ -19,7 +19,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     const remoteServer = typeof body.remoteServer === "string" ? body.remoteServer : "";
     const remoteSync = await syncArticleToRemote(article, remoteServer);
     return Response.json(
-      { remoteSync },
+      { remoteSync, article: getArticle(id) },
       { status: remoteSync.status === "synced" ? 200 : 502, headers: noStoreHeaders },
     );
   } catch {

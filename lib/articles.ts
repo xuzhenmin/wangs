@@ -1,8 +1,5 @@
 import { getDb } from "../db";
-import {
-  assertArticleUsesOssImages,
-  publishProcessedArticleImagesToOss,
-} from "./oss-article-images";
+import { assertArticleUsesOssImages } from "./oss-article-images";
 
 export type ArticleStatus = "draft" | "published";
 
@@ -20,7 +17,7 @@ export type ArticleInput = Pick<Article, "title" | "summary" | "content" | "stat
 
 export class ExternalImagesPendingError extends Error {
   constructor() {
-    super("正文图片尚未完成本地化、水印处理和 OSS 发布，请先处理图片后再发布。");
+    super("请先在本地发布文章，完成图片处理后再同步到远端。");
     this.name = "ExternalImagesPendingError";
   }
 }
@@ -83,13 +80,9 @@ export function articleExists(id: string) {
 
 export async function createArticle(input: ArticleInput) {
   const id = crypto.randomUUID();
-  const publication = input.status === "published"
-    ? await publishProcessedArticleImagesToOss(id, input.content)
-    : { content: input.content, uploadedImageCount: 0 };
   const article: Article = {
     id,
     ...input,
-    content: publication.content,
     createdAt: Date.now(),
     updatedAt: Date.now(),
   };
@@ -104,15 +97,12 @@ export async function createArticle(input: ArticleInput) {
     article.createdAt,
     article.updatedAt,
   );
-  return { article, uploadedImageCount: publication.uploadedImageCount };
+  return { article, uploadedImageCount: 0 };
 }
 
 export async function updateArticle(id: string, input: ArticleInput) {
   const exists = getDb().prepare("SELECT id FROM articles WHERE id = ?").get(id);
   if (!exists) return null;
-  const publication = input.status === "published"
-    ? await publishProcessedArticleImagesToOss(id, input.content)
-    : { content: input.content, uploadedImageCount: 0 };
   const updatedAt = Date.now();
   const result = getDb().prepare(`UPDATE articles SET
     title = ?,
@@ -123,7 +113,7 @@ export async function updateArticle(id: string, input: ArticleInput) {
   WHERE id = ?`).run(
     input.title,
     input.summary,
-    publication.content,
+    input.content,
     input.status,
     updatedAt,
     id,
@@ -138,7 +128,30 @@ export async function updateArticle(id: string, input: ArticleInput) {
     created_at AS createdAt,
     updated_at AS updatedAt
   FROM articles WHERE id = ?`).get(id) as unknown as Article;
-  return { article, uploadedImageCount: publication.uploadedImageCount };
+  return { article, uploadedImageCount: 0 };
+}
+
+// Uploading may take time. Only replace the snapshot that was checked, never
+// overwrite edits or a change back to draft made while the upload was running.
+export function saveOssContentForSync(snapshot: Article, content: string): Article | null {
+  assertArticleUsesOssImages(snapshot.id, content);
+  if (content === snapshot.content) {
+    const current = getArticle(snapshot.id);
+    return current?.status === "published"
+      && current.updatedAt === snapshot.updatedAt
+      && current.content === snapshot.content
+      && current.title === snapshot.title
+      && current.summary === snapshot.summary
+      ? current : null;
+  }
+  const updatedAt = Math.max(Date.now(), snapshot.updatedAt + 1);
+  const result = getDb().prepare(`UPDATE articles SET content = ?, updated_at = ?
+    WHERE id = ? AND status = 'published' AND updated_at = ?
+      AND content = ? AND title = ? AND summary = ?`).run(
+    content, updatedAt, snapshot.id, snapshot.updatedAt,
+    snapshot.content, snapshot.title, snapshot.summary,
+  );
+  return result.changes ? { ...snapshot, content, updatedAt } : null;
 }
 
 export function upsertSyncedArticle(

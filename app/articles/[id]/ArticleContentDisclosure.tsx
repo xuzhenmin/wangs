@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useLayoutEffect, useRef } from "react";
 
 export default function ArticleContentDisclosure({ content, collapsed }: { content: string; collapsed: boolean }) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const viewport = viewportRef.current;
     const body = contentRef.current;
     if (!collapsed || !viewport || !body) return;
@@ -21,7 +21,7 @@ export default function ArticleContentDisclosure({ content, collapsed }: { conte
     };
     const measure = () => {
       restoreAccessibility();
-      const height = Math.ceil(body.getBoundingClientRect().height * 2 / 3);
+      const height = Math.ceil(body.getBoundingClientRect().height / 2);
       viewport.style.maxHeight = `${height}px`;
       const cutoff = body.getBoundingClientRect().top + height;
       // Clipped links must not be reachable with Tab; fully hidden blocks must
@@ -59,6 +59,7 @@ export default function ArticleContentDisclosure({ content, collapsed }: { conte
       id="article-readable-content"
       className={`published-content-viewport${collapsed ? " is-collapsed" : ""}`}
       data-collapsed={collapsed}
+      style={collapsed ? { maxHeight: 0 } : undefined}
     >
       <div ref={contentRef} className="published-content" dangerouslySetInnerHTML={{ __html: content }} />
     </div>

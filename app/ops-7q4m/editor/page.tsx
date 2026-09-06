@@ -38,6 +38,7 @@ type RemoteSyncResult = {
   status: "synced" | "failed";
   articleUrl?: string;
   detail?: string;
+  uploadedImageCount?: number;
 };
 
 const emptyDraft: Draft = { title: "", summary: "", content: "", status: "draft" };
@@ -272,7 +273,7 @@ export default function ContentEditorPage() {
         setUnlocked(false);
         return;
       }
-      const data = await response.json() as { article?: Article; uploadedImageCount?: number; detail?: string };
+      const data = await response.json() as { article?: Article; detail?: string };
       if (!response.ok || !data.article) {
         if (data.detail) {
           setMessage(data.detail);
@@ -285,9 +286,7 @@ export default function ContentEditorPage() {
       setActiveId(savedArticle.id);
       setDraft(articleDraft(savedArticle));
       const savedMessage = status === "published"
-        ? data.uploadedImageCount
-          ? `内容已发布，${data.uploadedImageCount} 张处理后图片已上传 OSS；需要同步文章时，请点击左侧文档上的上传图标。`
-          : "内容已发布，正文图片使用 OSS；需要同步文章时，请点击左侧文档上的上传图标。"
+        ? "内容已在本地发布；图片校验和 OSS 上传将在同步远端时执行。请点击左侧文档上的上传图标同步文章。"
         : activeId ? "草稿修改已保存。" : "草稿已创建。";
       setMessage(savedMessage);
     } catch {
@@ -330,7 +329,19 @@ export default function ContentEditorPage() {
         setUnlocked(false);
         return;
       }
-      const data = await response.json() as { remoteSync?: RemoteSyncResult; detail?: string };
+      const data = await response.json() as { remoteSync?: RemoteSyncResult; article?: Article; detail?: string };
+      const preparedArticle = data.article;
+      if (preparedArticle?.id === syncArticle.id) {
+        // Keep completed OSS uploads when the remote server fails. Refresh the
+        // cached article without discarding any unsaved edits in the editor.
+        setArticles((current) => current.map((article) => article.id === preparedArticle.id ? preparedArticle : article));
+        setSyncArticle(preparedArticle);
+        if (activeId === preparedArticle.id) {
+          setDraft((current) => JSON.stringify(current) === JSON.stringify(articleDraft(syncArticle))
+            ? articleDraft(preparedArticle)
+            : current);
+        }
+      }
       if (data.remoteSync?.status === "synced") {
         window.localStorage.setItem("shenxiang_remote_server", remoteServer.trim());
         setRemoteSyncResult(data.remoteSync);
@@ -423,7 +434,7 @@ export default function ContentEditorPage() {
         }));
         setMessage(`${localizedImageCount ? `${localizedImageCount} 张普通外链图片已处理。` : ""} Blob 导入任务已创建，请切换到原网页点击“发送图片到编辑器”。`);
       } else {
-        setMessage(`${localizedImageCount} 张外链图片已下载到原图目录；请完成水印处理并替换为 /article-images/ 地址，发布时会自动上传 OSS。`);
+        setMessage(`${localizedImageCount} 张外链图片已下载到原图目录，可先在本地发布；同步远端前请完成水印处理并替换为 /article-images/ 地址，同步时会上传 OSS。`);
       }
     } catch {
       setMessage("图片处理失败，请稍后重试。");
@@ -537,7 +548,7 @@ export default function ContentEditorPage() {
                     disabled={!pendingImageCount || processingImages || savingStatus !== null}
                     onClick={() => void localizeImages()}
                   >
-                    {processingImages ? "正在处理…" : pendingImageCount ? `处理待处理图片（${pendingImageCount}）` : "没有待处理图片"}
+                    {processingImages ? "正在导入…" : pendingImageCount ? `导入待处理图片（${pendingImageCount}）` : "没有待导入图片"}
                   </button>
                 </div>
                 {activeImageImport && (
@@ -561,7 +572,7 @@ export default function ContentEditorPage() {
                 <RichTextEditor content={draft.content} onChange={(content) => setDraft((current) => ({ ...current, content }))} />
               </section>
               <section className="editor-pane preview-pane">
-                <div className="pane-head"><b>处理后内容预览</b><small>图片替换结果会实时显示，但不会自动保存</small></div>
+                <div className="pane-head"><b>正文内容预览</b><small>图片替换结果会实时显示，但不会自动保存</small></div>
                 <ArticlePreview draft={draft} />
               </section>
             </div>
@@ -582,7 +593,7 @@ export default function ContentEditorPage() {
             <button className="modal-close" type="button" aria-label="关闭" disabled={syncingRemote} onClick={closeRemoteSync}>×</button>
             <span className="modal-index">REMOTE PUBLISH</span>
             <h2 id="article-sync-title">同步到远端服务器</h2>
-            <p>《{syncArticle.title}》已在本地正式发布。确认后只同步文章数据，正文图片继续使用阿里云 OSS 地址。</p>
+            <p>《{syncArticle.title}》已在本地发布。确认后先检查图片是否完成水印处理，将处理后图片上传阿里云 OSS 并替换正文链接，再向远端同步文章数据。</p>
             <form onSubmit={uploadToRemote}>
               <label>
                 远端服务器网址或公网 IP
@@ -600,7 +611,7 @@ export default function ContentEditorPage() {
                   <b>{remoteSyncResult.status === "synced" ? "上传成功" : "上传失败"}</b>
                   <span>
                     {remoteSyncResult.status === "synced"
-                      ? "文章已写入远端，未重复上传图片。"
+                      ? `${remoteSyncResult.uploadedImageCount ? `${remoteSyncResult.uploadedImageCount} 张处理后图片已上传 OSS；` : "正文使用已有 OSS 图片；"}文章已写入远端，未向远端服务器上传图片文件。`
                       : remoteSyncResult.detail || "未知错误。"}
                   </span>
                   {remoteSyncResult.articleUrl && <a href={remoteSyncResult.articleUrl} target="_blank" rel="noreferrer">打开远端内容页 ↗</a>}
@@ -608,7 +619,7 @@ export default function ContentEditorPage() {
               )}
               <div className="article-sync-actions">
                 <button className="secondary" type="button" disabled={syncingRemote} onClick={closeRemoteSync}>取消</button>
-                <button className="primary" type="submit" disabled={syncingRemote}>{syncingRemote ? "正在同步…" : remoteSyncResult?.status === "synced" ? "重新同步" : "确认同步"}</button>
+                <button className="primary" type="submit" disabled={syncingRemote}>{syncingRemote ? "正在校验图片并同步…" : remoteSyncResult?.status === "synced" ? "重新同步" : "确认同步"}</button>
               </div>
             </form>
           </section>

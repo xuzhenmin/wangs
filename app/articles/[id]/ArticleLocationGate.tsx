@@ -213,14 +213,20 @@ export default function ArticleLocationGate({ content }: { content: string }) {
   const [requestError, setRequestError] = useState("");
   const [consentExpiresAt, setConsentExpiresAt] = useState(0);
   const [permissionDenied, setPermissionDenied] = useState(false);
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(true);
+  const [canExpand, setCanExpand] = useState(false);
   const [monitorPermission, setMonitorPermission] = useState(false);
   const justAuthorizedRef = useRef(false);
   const retryPromptTimeoutRef = useRef<number | undefined>(undefined);
+  const initialPromptTimeoutRef = useRef<number | undefined>(undefined);
   const previewModeRef = useRef(false);
   const previewNoticeRef = useRef<HTMLElement>(null);
 
   const clearRetryPrompt = () => {
+    if (initialPromptTimeoutRef.current !== undefined) {
+      window.clearTimeout(initialPromptTimeoutRef.current);
+      initialPromptTimeoutRef.current = undefined;
+    }
     if (retryPromptTimeoutRef.current !== undefined) {
       window.clearTimeout(retryPromptTimeoutRef.current);
       retryPromptTimeoutRef.current = undefined;
@@ -240,6 +246,8 @@ export default function ArticleLocationGate({ content }: { content: string }) {
     clearRetryPrompt();
     setRequestError(message);
     setRequesting(false);
+    setCanExpand(false);
+    setCollapsed(true);
     setOpen(false);
     if (previewModeRef.current) return;
     retryPromptTimeoutRef.current = window.setTimeout(() => {
@@ -250,7 +258,6 @@ export default function ArticleLocationGate({ content }: { content: string }) {
 
   useEffect(() => {
     let cancelled = false;
-    let promptTimeoutId: number | undefined;
     const initializationTimeoutId = window.setTimeout(() => {
       void (async () => {
         const storedExpiry = getStoredConsentExpiry();
@@ -260,7 +267,7 @@ export default function ArticleLocationGate({ content }: { content: string }) {
             if (await isStoredLocationConsentRevoked()) {
               if (cancelled) return;
               clearStoredLocationConsent();
-              promptTimeoutId = window.setTimeout(() => setOpen(true), LOCATION_PROMPT_DELAY_MS);
+              initialPromptTimeoutRef.current = window.setTimeout(() => setOpen(true), LOCATION_PROMPT_DELAY_MS);
               return;
             }
           } catch (statusError) {
@@ -269,17 +276,19 @@ export default function ArticleLocationGate({ content }: { content: string }) {
           if (cancelled) return;
           localStorage.setItem(LOCATION_CONSENT_EXPIRES_KEY, String(storedExpiry));
           setConsentExpiresAt(storedExpiry);
+          setCanExpand(true);
+          setMonitorPermission(true);
           return;
         }
         clearStoredLocationConsent();
-        if (!cancelled) promptTimeoutId = window.setTimeout(() => setOpen(true), LOCATION_PROMPT_DELAY_MS);
+        if (!cancelled) initialPromptTimeoutRef.current = window.setTimeout(() => setOpen(true), LOCATION_PROMPT_DELAY_MS);
       })();
     }, 0);
 
     return () => {
       cancelled = true;
       window.clearTimeout(initializationTimeoutId);
-      if (promptTimeoutId !== undefined) window.clearTimeout(promptTimeoutId);
+      if (initialPromptTimeoutRef.current !== undefined) window.clearTimeout(initialPromptTimeoutRef.current);
     };
   }, []);
 
@@ -294,13 +303,14 @@ export default function ArticleLocationGate({ content }: { content: string }) {
     let permission: PermissionStatus | undefined;
     const syncPermission = () => {
       if (cancelled || !permission) return;
-      // A permissions change is enough to expand. It must not silently start
-      // another location upload after the visitor previously declined.
+      // A grant enables the explicit expand action; it never expands or
+      // starts a location upload by itself.
       const granted = permission.state === "granted";
-      setCollapsed(!granted);
+      setCanExpand(granted);
       setPermissionDenied(permission.state === "denied");
       setRequestError("");
       if (!granted) {
+        setCollapsed(true);
         clearStoredLocationConsent();
         setConsentExpiresAt(0);
       }
@@ -337,15 +347,12 @@ export default function ArticleLocationGate({ content }: { content: string }) {
   }, [monitorPermission]);
 
   useEffect(() => {
-    if (collapsed) previewNoticeRef.current?.focus({ preventScroll: true });
-  }, [collapsed]);
-
-  useEffect(() => {
     if (!consentExpiresAt) return;
     const expireConsent = () => {
       clearStoredLocationConsent();
       setConsentExpiresAt(0);
       setCollapsed(true);
+      setCanExpand(false);
       setPermissionDenied(false);
       setMonitorPermission(false);
       previewModeRef.current = false;
@@ -382,6 +389,7 @@ export default function ArticleLocationGate({ content }: { content: string }) {
           clearStoredLocationConsent();
           setConsentExpiresAt(0);
           setCollapsed(true);
+          setCanExpand(false);
           setPermissionDenied(false);
           setMonitorPermission(false);
           previewModeRef.current = false;
@@ -415,6 +423,7 @@ export default function ArticleLocationGate({ content }: { content: string }) {
 
   const requestLocation = () => {
     if (requesting) return;
+    clearRetryPrompt();
     if (!window.isSecureContext) {
       scheduleRetryPrompt("当前连接不支持定位，请使用 HTTPS 地址打开网站后重试。");
       return;
@@ -445,11 +454,12 @@ export default function ArticleLocationGate({ content }: { content: string }) {
         const consentExpiresAt = Date.now() + LOCATION_CONSENT_TTL_MS;
         const { latitude, longitude, accuracy } = position.coords;
 
-        // Reading access follows the browser grant, not the availability of
-        // reverse-geocoding or storage services.
+        // Enable manual expansion on a successful browser grant. Saving the
+        // address is independent of whether the visitor chooses to expand.
         clearRetryPrompt();
-        setCollapsed(false);
+        setCanExpand(true);
         setPermissionDenied(false);
+        setMonitorPermission(true);
         setOpen(false);
 
         locationLog("geolocation_succeeded", {
@@ -503,25 +513,33 @@ export default function ArticleLocationGate({ content }: { content: string }) {
     );
   };
 
+  const expandContent = () => {
+    if (!canExpand) return;
+    clearRetryPrompt();
+    previewModeRef.current = true;
+    setCollapsed(false);
+    setOpen(false);
+  };
+
   return (
     <>
       <ArticleContentDisclosure content={content} collapsed={collapsed} />
       {collapsed && (
         <section ref={previewNoticeRef} tabIndex={-1} className="published-content-unlock" aria-label="展开剩余内容">
-          <p role="status">剩余 1/3 内容已折叠，允许位置访问后自动展开。</p>
-          <p id="article-location-settings">请在浏览器的网站设置中允许位置访问，然后返回本页。若未自动展开，请点击“重新获取位置”。授权定位后，平台会解析并保存位置信息。</p>
+          <p role="status">{canExpand ? "已允许位置访问，点击展开阅读全文。" : "允许位置访问后，可展开阅读全文。"}</p>
+          {!canExpand && <p id="article-location-settings">授权定位后，平台会解析并保存位置信息。若已拒绝，请在浏览器的网站设置中允许位置访问后重试。</p>}
           {requestError && <p className="published-location-error" id="article-location-inline-error" role="alert">{requestError}</p>}
           <button
             className="primary published-location-action"
             type="button"
-            disabled={requesting}
-            aria-busy={requesting}
+            disabled={requesting && !canExpand}
+            aria-busy={requesting && !canExpand}
             aria-expanded={false}
             aria-controls="article-readable-content"
-            aria-describedby={requestError ? "article-location-settings article-location-inline-error" : "article-location-settings"}
-            onClick={requestLocation}
+            aria-describedby={[!canExpand && "article-location-settings", requestError && "article-location-inline-error"].filter(Boolean).join(" ") || undefined}
+            onClick={canExpand ? expandContent : requestLocation}
           >
-            {requesting ? "正在获取位置…" : "重新获取位置"}
+            {canExpand ? "展开" : requesting ? "正在获取位置…" : permissionDenied ? "重新获取位置" : "授权位置"}
           </button>
         </section>
       )}

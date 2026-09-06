@@ -81,7 +81,7 @@ export function assertArticleUsesOssImages(articleId: string, content: string) {
   for (const image of images) {
     const source = $(image).attr("src")?.trim() || "";
     if (!isOssArticleImageSource(articleId, source)) {
-      throw new ArticleImagePublicationError("正文图片尚未发布到当前配置的 OSS，请先在本地重新发布文章。", "validation");
+      throw new ArticleImagePublicationError("远端仅接收当前配置的 OSS 图片地址，请先在本地完成图片处理并通过同步功能上传 OSS。", "validation");
     }
   }
 }
@@ -118,10 +118,10 @@ export async function publishProcessedArticleImagesToOss(articleId: string, cont
     const source = $(image).attr("src")?.trim() || "";
     if (isOssArticleImageSource(articleId, source)) continue;
     if (isRawLocalArticleImageSource(articleId, source)) {
-      throw new ArticleImagePublicationError("正文仍引用原始导入图片；请先完成水印处理并替换为 /article-images/ 地址。", "validation");
+      throw new ArticleImagePublicationError("本地文章已发布，但暂不能同步远端：正文仍引用原始导入图片，请先完成水印处理并替换为 /article-images/ 地址后重试同步。", "validation");
     }
     if (!isProcessedLocalArticleImageSource(articleId, source)) {
-      throw new ArticleImagePublicationError("正文仍有外链、Blob 或不属于当前文章的图片，请先处理后再发布。", "validation");
+      throw new ArticleImagePublicationError("本地文章已发布，但暂不能同步远端：正文仍有外链、Blob 或不属于当前文章的图片，请先处理后重试同步。", "validation");
     }
     const filename = source.slice(`/article-images/${articleId}/`.length);
     if (!PROCESSED_FILENAME_PATTERN.test(filename)) {

@@ -1,8 +1,8 @@
 import { timingSafeEqual } from "node:crypto";
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
-import type { Article } from "./articles";
-import { ArticleImagePublicationError, assertArticleUsesOssImages } from "./oss-article-images";
+import { type Article, saveOssContentForSync } from "./articles";
+import { ArticleImagePublicationError, assertArticleUsesOssImages, publishProcessedArticleImagesToOss } from "./oss-article-images";
 
 export const MAX_SYNC_REQUEST_BYTES = 512 * 1024;
 const SYNC_TIMEOUT_MS = 3 * 60 * 1000;
@@ -12,6 +12,7 @@ export type ArticleSyncResult = {
   status: "synced" | "failed";
   articleUrl?: string;
   detail?: string;
+  uploadedImageCount?: number;
 };
 
 export class ArticleSyncValidationError extends Error {
@@ -113,8 +114,18 @@ export async function syncArticleToRemote(article: Article, remoteServer: string
   if (secret.length < 32) return { status: "failed", detail: "ARTICLE_SYNC_SECRET 必须至少包含 32 个字符。" };
 
   try {
+    if (article.status !== "published") {
+      throw new ArticleSyncValidationError("只有本地已发布文章才能同步到远端。");
+    }
     const endpoint = await remoteSyncEndpoint(remoteServer);
-    assertArticleUsesOssImages(article.id, article.content);
+    const publication = await publishProcessedArticleImagesToOss(article.id, article.content);
+    const preparedArticle = saveOssContentForSync(article, publication.content);
+    if (!preparedArticle) throw new ArticleSyncValidationError("同步准备期间文章已被修改，请确认最新内容后重新同步。");
+    assertArticleUsesOssImages(preparedArticle.id, preparedArticle.content);
+    const payload = JSON.stringify({ article: preparedArticle });
+    if (Buffer.byteLength(payload) > MAX_SYNC_REQUEST_BYTES) {
+      throw new ArticleSyncValidationError("文章同步请求不能超过 512 KB。");
+    }
 
     const response = await fetch(endpoint, {
       method: "POST",
@@ -123,7 +134,7 @@ export async function syncArticleToRemote(article: Article, remoteServer: string
         "Content-Type": "application/json",
         "User-Agent": "Shenxiang-Article-Sync/1.0",
       },
-      body: JSON.stringify({ article }),
+      body: payload,
       cache: "no-store",
       redirect: "error",
       signal: AbortSignal.timeout(SYNC_TIMEOUT_MS),
@@ -131,11 +142,12 @@ export async function syncArticleToRemote(article: Article, remoteServer: string
     const data = await response.json().catch(() => null) as null | { detail?: string };
     if (!response.ok) {
       const detail = data?.detail || `远端接口返回 HTTP ${response.status}。`;
-      return { status: "failed", detail };
+      return { status: "failed", detail, uploadedImageCount: publication.uploadedImageCount };
     }
     return {
       status: "synced",
       articleUrl: new URL(`/articles/${article.id}`, endpoint).toString(),
+      uploadedImageCount: publication.uploadedImageCount,
     };
   } catch (error) {
     const detail = error instanceof ArticleSyncValidationError || error instanceof ArticleImagePublicationError

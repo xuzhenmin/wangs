@@ -2,6 +2,7 @@
 
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
+import WechatShare from "./WechatShare";
 import {
   assertLocationUploadAccepted,
   clearStoredLocationConsent,
@@ -573,6 +574,7 @@ export default function Home() {
 
   return (
     <main className={`home-page${gate !== "closed" ? " location-locked" : ""}`}>
+      <WechatShare title={isExclusiveContent ? "景甜张继科地下恋时间线｜深巷独家内容" : "景甜张继科地下恋：红娘事件及时间线全曝光｜深巷"} desc="景甜、张继科地下恋时间线及任嘉伦牵线人传闻梳理。" link={pathname} imgUrl="/api/share/cover" />
       <header className="site-header">
         <div className="topline page-shell">
           <span>{dateLabel}</span>

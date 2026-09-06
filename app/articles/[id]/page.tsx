@@ -5,6 +5,8 @@ import sanitizeHtml from "sanitize-html";
 import { isDisplayableArticleImageSource } from "../../../lib/article-image-urls";
 import { getPublishedArticle } from "../../../lib/articles";
 import ArticleLocationGate from "./ArticleLocationGate";
+import WechatShare from "../../WechatShare";
+import { articleShareData } from "../../../lib/share-metadata";
 
 export const dynamic = "force-dynamic";
 
@@ -49,22 +51,11 @@ function safeArticleContent(articleId: string, content: string) {
   });
 }
 
-function firstArticleImage(articleId: string, content: string) {
-  const imagePattern = /<img\b[^>]*\bsrc\s*=\s*(["'])(.*?)\1/gi;
-  for (const match of content.matchAll(imagePattern)) {
-    const source = match[2]?.trim();
-    if (source && isDisplayableArticleImageSource(articleId, source)) return source;
-  }
-  return "/og.png";
-}
-
 export async function generateMetadata({ params }: ArticlePageProps): Promise<Metadata> {
   const { id } = await params;
   const article = await getPublishedArticle(id);
   if (!article) return { title: "内容不存在｜深巷", robots: { index: false, follow: false } };
-  const shareImage = firstArticleImage(article.id, article.content);
-  const title = `${article.title}｜深巷`;
-  const description = article.summary || article.title;
+  const { imgUrl: shareImage, title, desc: description } = articleShareData(article);
   return {
     title,
     description,
@@ -78,7 +69,7 @@ export async function generateMetadata({ params }: ArticlePageProps): Promise<Me
       locale: "zh_CN",
       publishedTime: new Date(article.createdAt).toISOString(),
       modifiedTime: new Date(article.updatedAt).toISOString(),
-      images: [{ url: shareImage, alt: article.title }],
+      images: [{ url: shareImage, width: 480, height: 480, type: "image/jpeg", alt: article.title }],
     },
     twitter: {
       card: "summary_large_image",
@@ -97,6 +88,7 @@ export default async function ArticlePage({ params }: ArticlePageProps) {
 
   return (
     <main className="published-page">
+      <WechatShare {...articleShareData(article)} />
       <header className="published-header">
         <Link className="brand small" href="/">深<span>巷</span></Link>
         <Link href="/">返回首页</Link>

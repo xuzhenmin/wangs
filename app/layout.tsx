@@ -21,13 +21,13 @@ export function generateMetadata(): Metadata {
       url: "/",
       siteName: "深巷",
       locale: "zh_CN",
-      images: [{ url: "/og.png", width: 1731, height: 909, alt: "深巷｜城市观察与同城报道" }],
+      images: [{ url: "/api/share/cover", width: 480, height: 480, type: "image/jpeg", alt: "深巷｜城市观察与同城报道" }],
     },
     twitter: {
       card: "summary_large_image",
       title: "景甜张继科地下恋：红娘事件及时间线全曝光｜深巷",
       description: "景甜、张继科地下恋时间线及任嘉伦牵线人传闻梳理。",
-      images: ["/og.png"],
+      images: ["/api/share/cover"],
     },
   };
 }
