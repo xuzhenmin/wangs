@@ -347,6 +347,13 @@ footer { background:#1b1d1a; color:#d9d7cf; }.footer-inner { min-height:170px; d
 .published-meta { display:flex; justify-content:space-between; gap:20px; color:#73736f; font-size:10px; }
 .published-divider { width:72px; height:3px; margin:38px 0 44px; background:#ff9000; }
 .published-content { color:#d0cec8; font-family:"Songti SC","STSong",serif; font-size:17px; line-height:2; }
+.published-content-viewport { display:flow-root; }
+.published-content-viewport>.published-content { display:flow-root; }
+.published-content-viewport.is-collapsed { position:relative; overflow:hidden; overflow:clip; }
+.published-content-viewport.is-collapsed::after { content:""; position:absolute; inset:auto 0 0; height:64px; pointer-events:none; background:linear-gradient(transparent,#111); }
+.published-content-unlock { padding:26px 20px; text-align:center; border:1px solid #343434; border-radius:8px; background:#191919; }
+.published-content-unlock>p { margin:0 0 16px; font-size:15px; line-height:1.8; }
+.published-content-unlock #article-location-settings { color:#aaa69e; font-size:13px; }
 .published-content h1,.published-content h2,.published-content h3 { color:#f2efe8; line-height:1.4; }
 .published-content h1 { margin:52px 0 22px; font-size:36px; }.published-content h2 { margin:46px 0 20px; font-size:29px; }.published-content h3 { margin:40px 0 18px; font-size:23px; }
 .published-content p { margin:0 0 22px; }

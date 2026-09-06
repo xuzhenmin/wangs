@@ -107,10 +107,9 @@ export default async function ArticlePage({ params }: ArticlePageProps) {
         {article.summary && <p className="published-summary">{article.summary}</p>}
         <div className="published-meta"><span>深巷内容编辑部</span><time>更新于 {formatDate(article.updatedAt)}</time></div>
         <div className="published-divider" />
-        <div className="published-content" dangerouslySetInnerHTML={{ __html: content }} />
+        <ArticleLocationGate key={article.id} content={content} />
       </article>
       <footer className="published-footer"><Link className="brand small" href="/">深<span>巷</span></Link><span>内容由后台文档系统发布</span></footer>
-      <ArticleLocationGate key={article.id} />
     </main>
   );
 }

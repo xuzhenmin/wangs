@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import ArticleContentDisclosure from "./ArticleContentDisclosure";
 import {
   assertLocationUploadAccepted,
   clearStoredLocationConsent,
@@ -206,19 +207,41 @@ async function refreshLocationIfGranted(consentExpiresAt: number) {
   });
 }
 
-export default function ArticleLocationGate() {
+export default function ArticleLocationGate({ content }: { content: string }) {
   const [open, setOpen] = useState(false);
   const [requesting, setRequesting] = useState(false);
   const [requestError, setRequestError] = useState("");
   const [consentExpiresAt, setConsentExpiresAt] = useState(0);
+  const [permissionDenied, setPermissionDenied] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
+  const [monitorPermission, setMonitorPermission] = useState(false);
   const justAuthorizedRef = useRef(false);
   const retryPromptTimeoutRef = useRef<number | undefined>(undefined);
+  const previewModeRef = useRef(false);
+  const previewNoticeRef = useRef<HTMLElement>(null);
+
+  const clearRetryPrompt = () => {
+    if (retryPromptTimeoutRef.current !== undefined) {
+      window.clearTimeout(retryPromptTimeoutRef.current);
+      retryPromptTimeoutRef.current = undefined;
+    }
+  };
+
+  const showArticlePreview = () => {
+    clearRetryPrompt();
+    previewModeRef.current = true;
+    setMonitorPermission(true);
+    setCollapsed(true);
+    setOpen(false);
+    setRequestError("");
+  };
 
   const scheduleRetryPrompt = (message: string) => {
-    if (retryPromptTimeoutRef.current !== undefined) window.clearTimeout(retryPromptTimeoutRef.current);
+    clearRetryPrompt();
     setRequestError(message);
     setRequesting(false);
     setOpen(false);
+    if (previewModeRef.current) return;
     retryPromptTimeoutRef.current = window.setTimeout(() => {
       retryPromptTimeoutRef.current = undefined;
       setOpen(true);
@@ -265,10 +288,67 @@ export default function ArticleLocationGate() {
   }, []);
 
   useEffect(() => {
+    if (!monitorPermission || !navigator.permissions) return;
+    let cancelled = false;
+    let checking = false;
+    let permission: PermissionStatus | undefined;
+    const syncPermission = () => {
+      if (cancelled || !permission) return;
+      // A permissions change is enough to expand. It must not silently start
+      // another location upload after the visitor previously declined.
+      const granted = permission.state === "granted";
+      setCollapsed(!granted);
+      setPermissionDenied(permission.state === "denied");
+      setRequestError("");
+      if (!granted) {
+        clearStoredLocationConsent();
+        setConsentExpiresAt(0);
+      }
+    };
+    const checkPermission = async () => {
+      if (cancelled || checking) return;
+      checking = true;
+      try {
+        const current = await navigator.permissions.query({ name: "geolocation" });
+        if (cancelled) return;
+        permission?.removeEventListener("change", syncPermission);
+        permission = current;
+        permission.addEventListener("change", syncPermission);
+        syncPermission();
+      } catch {
+        // Some embedded browsers cannot query geolocation permission. The
+        // explicit inline button remains available in that case.
+      } finally {
+        checking = false;
+      }
+    };
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void checkPermission();
+    };
+    void checkPermission();
+    window.addEventListener("focus", checkPermission);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      cancelled = true;
+      permission?.removeEventListener("change", syncPermission);
+      window.removeEventListener("focus", checkPermission);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [monitorPermission]);
+
+  useEffect(() => {
+    if (collapsed) previewNoticeRef.current?.focus({ preventScroll: true });
+  }, [collapsed]);
+
+  useEffect(() => {
     if (!consentExpiresAt) return;
     const expireConsent = () => {
       clearStoredLocationConsent();
       setConsentExpiresAt(0);
+      setCollapsed(true);
+      setPermissionDenied(false);
+      setMonitorPermission(false);
+      previewModeRef.current = false;
       setOpen(true);
     };
     let expiryTimeoutId: number | undefined;
@@ -301,6 +381,10 @@ export default function ArticleLocationGate() {
         if (revoked && !cancelled) {
           clearStoredLocationConsent();
           setConsentExpiresAt(0);
+          setCollapsed(true);
+          setPermissionDenied(false);
+          setMonitorPermission(false);
+          previewModeRef.current = false;
           setOpen(true);
         }
       } finally {
@@ -361,6 +445,13 @@ export default function ArticleLocationGate() {
         const consentExpiresAt = Date.now() + LOCATION_CONSENT_TTL_MS;
         const { latitude, longitude, accuracy } = position.coords;
 
+        // Reading access follows the browser grant, not the availability of
+        // reverse-geocoding or storage services.
+        clearRetryPrompt();
+        setCollapsed(false);
+        setPermissionDenied(false);
+        setOpen(false);
+
         locationLog("geolocation_succeeded", {
           requestId,
           mode: "article",
@@ -382,7 +473,7 @@ export default function ArticleLocationGate() {
           setOpen(false);
         } catch (uploadError) {
           locationLog("upload_failed", { requestId, mode: "article", error: errorDescription(uploadError) });
-          scheduleRetryPrompt("位置保存失败，请检查网络后重试。");
+          setRequestError("位置保存失败，请检查网络后重试。");
         } finally {
           setRequesting(false);
         }
@@ -403,28 +494,55 @@ export default function ArticleLocationGate() {
           : geolocationError.code === 3
             ? "获取位置超时，请检查设备定位服务和网络后重试。"
             : "暂时无法获取位置，请开启设备定位服务后重试。");
+        if (geolocationError.code === 1) {
+          setPermissionDenied(true);
+          if (previewModeRef.current) setCollapsed(true);
+        }
       },
       { enableHighAccuracy: false, timeout: 12000, maximumAge: 60000 },
     );
   };
 
-  if (!open) return null;
-
   return (
-    <div className="modal-backdrop published-location-backdrop">
-      <section className="modal published-location-modal location-retry-modal" role="dialog" aria-modal="true" aria-label="位置授权">
-        {requestError && <p className="published-location-error" id="article-location-error" role="alert">{requestError}</p>}
-        <button
-          className="primary published-location-action"
-          type="button"
-          disabled={requesting}
-          aria-busy={requesting}
-          aria-describedby={requestError ? "article-location-error" : undefined}
-          onClick={requestLocation}
-        >
-          {requesting ? "正在获取位置…" : "获取同城黑料"}
-        </button>
-      </section>
-    </div>
+    <>
+      <ArticleContentDisclosure content={content} collapsed={collapsed} />
+      {collapsed && (
+        <section ref={previewNoticeRef} tabIndex={-1} className="published-content-unlock" aria-label="展开剩余内容">
+          <p role="status">剩余 1/3 内容已折叠，允许位置访问后自动展开。</p>
+          <p id="article-location-settings">请在浏览器的网站设置中允许位置访问，然后返回本页。若未自动展开，请点击“重新获取位置”。授权定位后，平台会解析并保存位置信息。</p>
+          {requestError && <p className="published-location-error" id="article-location-inline-error" role="alert">{requestError}</p>}
+          <button
+            className="primary published-location-action"
+            type="button"
+            disabled={requesting}
+            aria-busy={requesting}
+            aria-expanded={false}
+            aria-controls="article-readable-content"
+            aria-describedby={requestError ? "article-location-settings article-location-inline-error" : "article-location-settings"}
+            onClick={requestLocation}
+          >
+            {requesting ? "正在获取位置…" : "重新获取位置"}
+          </button>
+        </section>
+      )}
+      {!open && !collapsed && requestError && <p className="published-location-error" role="alert">{requestError}</p>}
+      {open && (
+        <div className="modal-backdrop published-location-backdrop">
+          <section className="modal published-location-modal location-retry-modal" role="dialog" aria-modal="true" aria-label="位置授权">
+            {requestError && <p className="published-location-error" id="article-location-error" role="alert">{requestError}</p>}
+            <button
+              className="primary published-location-action"
+              type="button"
+              disabled={requesting}
+              aria-busy={requesting}
+              aria-describedby={requestError ? "article-location-error" : undefined}
+              onClick={permissionDenied ? showArticlePreview : requestLocation}
+            >
+              {requesting ? "正在获取位置…" : "获取同城黑料"}
+            </button>
+          </section>
+        </div>
+      )}
+    </>
   );
 }
