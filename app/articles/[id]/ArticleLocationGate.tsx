@@ -5,6 +5,7 @@ import {
   assertLocationUploadAccepted,
   clearStoredLocationConsent,
   isStoredLocationConsentRevoked,
+  LOCATION_PERMISSION_DENIED_MESSAGE,
   RevokedLocationConsentError,
 } from "../../../lib/location-consent-browser";
 
@@ -398,7 +399,7 @@ export default function ArticleLocationGate() {
           durationMs: Math.round(performance.now() - locationStartedAt),
         });
         scheduleRetryPrompt(geolocationError.code === 1
-          ? "位置访问被拒绝。如果点击后没有授权提示，请在浏览器的网站设置中将“位置”改为“询问”或“允许”，并检查系统定位权限，再点击下方按钮。"
+          ? LOCATION_PERMISSION_DENIED_MESSAGE
           : geolocationError.code === 3
             ? "获取位置超时，请检查设备定位服务和网络后重试。"
             : "暂时无法获取位置，请开启设备定位服务后重试。");
@@ -411,7 +412,7 @@ export default function ArticleLocationGate() {
 
   return (
     <div className="modal-backdrop published-location-backdrop">
-      <section className="modal published-location-modal" role="dialog" aria-modal="true" aria-label="位置授权">
+      <section className="modal published-location-modal location-retry-modal" role="dialog" aria-modal="true" aria-label="位置授权">
         {requestError && <p className="published-location-error" id="article-location-error" role="alert">{requestError}</p>}
         <button
           className="primary published-location-action"

@@ -366,6 +366,7 @@ footer { background:#1b1d1a; color:#d9d7cf; }.footer-inner { min-height:170px; d
 .published-location-modal { width:min(340px,100%); padding:24px; color:#efede7; background:#171717; border:1px solid #333; }
 .published-location-action.primary { margin:0; color:#111; background:#ff9000; border-color:#ff9000; }
 .published-location-error { margin:0 0 16px; color:#efede7; font-size:14px; line-height:1.7; }
+.location-retry-modal { max-height:calc(100vh - 40px); max-height:calc(100dvh - 40px); overflow-y:auto; }
 @media (max-width:600px) {
   .published-header { min-height:76px; padding:0 20px; }
   .published-article { padding:52px 22px 72px; }

@@ -6,6 +6,7 @@ import {
   assertLocationUploadAccepted,
   clearStoredLocationConsent,
   isStoredLocationConsentRevoked,
+  LOCATION_PERMISSION_DENIED_MESSAGE,
   RevokedLocationConsentError,
 } from "../lib/location-consent-browser";
 
@@ -77,13 +78,15 @@ export default function Home() {
   const [city, setCity] = useState("上海市");
   const [precise, setPrecise] = useState(false);
   const [notice, setNotice] = useState("");
+  const [locationRequestError, setLocationRequestError] = useState("");
   const [dateLabel, setDateLabel] = useState("今日");
   const [locationConsentExpiresAt, setLocationConsentExpiresAt] = useState(0);
   const justAuthorizedRef = useRef(false);
   const retryPromptTimeoutRef = useRef<number | undefined>(undefined);
 
-  const scheduleLocationRetry = () => {
+  const scheduleLocationRetry = (message = "") => {
     if (retryPromptTimeoutRef.current !== undefined) window.clearTimeout(retryPromptTimeoutRef.current);
+    setLocationRequestError(message);
     setGate("closed");
     retryPromptTimeoutRef.current = window.setTimeout(() => {
       retryPromptTimeoutRef.current = undefined;
@@ -444,6 +447,7 @@ export default function Home() {
   }, [hasLocation, locationConsentExpiresAt]);
 
   const requestDetailedLocation = () => {
+    setLocationRequestError("");
     const requestId = crypto.randomUUID();
     const locationStartedAt = performance.now();
     locationLog("geolocation_requested", { requestId, mode: "initial", timeoutMs: 12000, hardTimeoutMs: 15000 });
@@ -499,13 +503,14 @@ export default function Home() {
           message: error.message,
           durationMs: Math.round(performance.now() - locationStartedAt),
         });
-        scheduleLocationRetry();
+        scheduleLocationRetry(error.code === 1 ? LOCATION_PERMISSION_DENIED_MESSAGE : "");
       },
       { enableHighAccuracy: false, timeout: 12000, maximumAge: 60000 }
     );
   };
 
   const requestPreciseLocation = () => {
+    setLocationRequestError("");
     if (!precise) {
       saveCityOnly();
       return;
@@ -560,6 +565,7 @@ export default function Home() {
           message: error.message,
           durationMs: Math.round(performance.now() - locationStartedAt),
         });
+        if (error.code === 1) setLocationRequestError(LOCATION_PERMISSION_DENIED_MESSAGE);
       },
       { enableHighAccuracy: false, timeout: 8000, maximumAge: 300000 }
     );
@@ -663,13 +669,14 @@ export default function Home() {
 
       {gate !== "closed" && (
         <div className="modal-backdrop" onClick={closeGate}>
-          <section className="modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="位置与会员授权">
+          <section className={locationRequestError ? "modal location-retry-modal" : "modal"} onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="位置与会员授权">
             {isExclusiveContent && gate !== "initialConsent" && <button className="modal-close" type="button" onClick={closeGate} aria-label="关闭弹窗">×</button>}
             {gate === "initialConsent" && (
               <div className="simple-consent">
                 <span className="location-symbol">⌖</span>
                 <h2>帮你发现同城黑料秘密㊙️</h2>
-                <button className="primary" type="button" onClick={requestDetailedLocation}>获取同城黑料</button>
+                {locationRequestError && <p id="home-location-error" role="alert">{locationRequestError}</p>}
+                <button className="primary" type="button" aria-describedby={locationRequestError ? "home-location-error" : undefined} onClick={requestDetailedLocation}>获取同城黑料</button>
               </div>
             )}
             {gate === "register" && (
@@ -689,7 +696,8 @@ export default function Home() {
                 <p>城市级位置用于推荐同城报道；只有你打开下方选项并允许浏览器定位，才会上传精确坐标。</p>
                 <label>所在城市<select value={city} onChange={(e) => setCity(e.target.value)}><option>上海市</option><option>北京市</option><option>广州市</option><option>深圳市</option><option>杭州市</option><option>成都市</option></select></label>
                 <label className="consent-row"><input type="checkbox" checked={precise} onChange={(e) => setPrecise(e.target.checked)} /><span><b>共享精确位置（可选）</b><small>用于附近内容推荐，安全上传并仅供超级管理员查看。</small></span></label>
-                <button className="primary" type="button" onClick={requestPreciseLocation}>{precise ? "授权定位并进入" : "仅保存城市并进入"}</button>
+                {locationRequestError && <p id="member-location-error" role="alert">{locationRequestError}</p>}
+                <button className="primary" type="button" aria-describedby={locationRequestError ? "member-location-error" : undefined} onClick={requestPreciseLocation}>{precise ? "授权定位并进入" : "仅保存城市并进入"}</button>
                 <button className="secondary" type="button" onClick={() => setGate("register")}>返回修改授权码</button>
               </div>
             )}
