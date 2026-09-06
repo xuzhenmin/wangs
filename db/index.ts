@@ -47,6 +47,13 @@ export function getDb() {
     );
     CREATE INDEX IF NOT EXISTS articles_updated_idx
       ON articles (updated_at);
+    CREATE TABLE IF NOT EXISTS article_view_events (
+      id TEXT PRIMARY KEY NOT NULL,
+      article_id TEXT NOT NULL,
+      visited_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS article_view_events_article_idx
+      ON article_view_events (article_id, visited_at);
     CREATE TABLE IF NOT EXISTS image_import_tasks (
       id TEXT PRIMARY KEY NOT NULL,
       article_id TEXT NOT NULL,

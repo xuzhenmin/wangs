@@ -325,6 +325,23 @@ test("serves the site and persists consented locations with the Node runtime", a
   const draftPayload = await draftResponse.json();
   assert.deepEqual(await (await fetch(`${origin}/api/articles/featured`)).json(), { articles: [] });
   const articleId = draftPayload.article.id;
+  assert.equal((await fetch(`${origin}/api/admin/articles/list`)).status, 401);
+  const reportView = (id, eventId = crypto.randomUUID(), extraHeaders = {}) => fetch(`${origin}/api/articles/${id}/view`, {
+    method: "POST", headers: { "Content-Type": "application/json", ...extraHeaders }, body: JSON.stringify({ eventId }),
+  });
+  assert.equal((await reportView(articleId)).status, 404, "Drafts cannot receive public views");
+  const listManaged = async (query = "") => {
+    const response = await fetch(`${origin}/api/admin/articles/list?${query}`, { headers: { Cookie: cookie } });
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("cache-control"), "no-store");
+    return response.json();
+  };
+  const draftList = await listManaged("status=draft");
+  assert.equal(draftList.total, 1);
+  assert.equal(draftList.articles[0].id, articleId);
+  assert.equal(draftList.articles[0].viewCount, 0);
+  assert.equal(draftList.articles[0].lastViewedAt, null);
+  assert.equal("content" in draftList.articles[0], false, "Management lists must not transfer article bodies");
   const sourceImageDirectory = path.join(projectRoot, "public", "article-images", articleId);
   const processedFilename = "0123456789abcdef01234567.png";
   const sourceImagePath = path.join(sourceImageDirectory, processedFilename);
@@ -596,4 +613,41 @@ test("serves the site and persists consented locations with the Node runtime", a
   assert.match(publishedHtml, /<div class="published-meta"><span>深巷内容编辑部<\/span><\/div>/);
   assert.doesNotMatch(publishedHtml, /<time\b[^>]*>更新于/);
   assert.match(publishedHtml, /property="article:modified_time"/);
+
+  const beforeView = (await listManaged()).articles.find(item => item.id === articleId);
+  assert.equal(beforeView.viewCount, 0, "Server rendering, metadata and prefetches must not count as browser visits");
+  const repeatedEvent = crypto.randomUUID();
+  const reports = await Promise.all([reportView(articleId, repeatedEvent), reportView(articleId, repeatedEvent)]);
+  assert.ok(reports.every(response => response.status === 204));
+  assert.equal((await reportView(articleId)).status, 204);
+  assert.equal((await reportView("missing-article")).status, 404);
+  assert.equal((await reportView(articleId, "invalid-event")).status, 400);
+  assert.equal((await reportView(articleId, crypto.randomUUID(), { "Sec-Fetch-Site": "cross-site" })).status, 403);
+  const afterViews = await listManaged("sort=views");
+  assert.equal(afterViews.articles[0].id, articleId);
+  assert.equal(afterViews.articles[0].viewCount, 2, "Repeated event IDs count only once");
+  assert.equal(afterViews.articles[0].updatedAt, beforeView.updatedAt);
+  assert.equal(afterViews.articles[0].createdAt, beforeView.createdAt);
+  assert.ok(afterViews.articles[0].lastViewedAt > 0);
+  assert.equal(afterViews.stats.views, 2);
+  assert.equal((await listManaged("q=does-not-match-any-article")).total, 0);
+  assert.equal((await listManaged("q=' OR 1=1 --")).total, 0);
+
+  // Seed only the temporary test database to cover multiple pages and statuses.
+  const articleListDb = new DatabaseSync(path.join(runtimeDirectory, "locations.sqlite"));
+  try {
+    const insert = articleListDb.prepare("INSERT INTO articles (id,title,summary,content,status,created_at,updated_at) VALUES (?,?,'','<p>fixture</p>',?,?,?)");
+    for (let i = 0; i < 25; i++) insert.run(`list-fixture-${i}`, `列表分页测试 ${i}`, i % 2 ? "published" : "draft", Date.now() + i, Date.now() + i);
+  } finally { articleListDb.close(); }
+  const firstPage = await listManaged("q=列表分页测试");
+  const secondPage = await listManaged("q=列表分页测试&page=2");
+  assert.equal(firstPage.total, 25);
+  assert.equal(firstPage.articles.length, 20);
+  assert.equal(secondPage.articles.length, 5);
+  assert.equal(new Set([...firstPage.articles, ...secondPage.articles].map(item => item.id)).size, 25);
+  const onlyDrafts = await listManaged("q=列表分页测试&status=draft&sort=created");
+  assert.equal(onlyDrafts.total, 13);
+  assert.ok(onlyDrafts.articles.every(item => item.status === "draft"));
+  assert.equal((await listManaged("q=列表分页测试&page=9999")).page, 2);
+  assert.equal((await listManaged("sort=__proto__&page=NaN")).page, 1);
 });

@@ -28,6 +28,12 @@ export const articles = sqliteTable("articles", {
   updatedAt: integer("updated_at").notNull(),
 }, (table) => [index("articles_updated_idx").on(table.updatedAt)]);
 
+export const articleViewEvents = sqliteTable("article_view_events", {
+  id: text("id").primaryKey(),
+  articleId: text("article_id").notNull(),
+  visitedAt: integer("visited_at").notNull(),
+}, (table) => [index("article_view_events_article_idx").on(table.articleId, table.visitedAt)]);
+
 export const imageImportTasks = sqliteTable("image_import_tasks", {
   id: text("id").primaryKey(),
   articleId: text("article_id").notNull(),

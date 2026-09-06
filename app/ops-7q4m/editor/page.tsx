@@ -136,7 +136,8 @@ export default function ContentEditorPage() {
     }
     if (!response.ok) throw new Error("article-load-failed");
     const data = await response.json() as { articles: Article[]; articleImageBaseUrl?: string | null };
-    const selected = data.articles[0];
+    const requestedId = new URLSearchParams(window.location.search).get("id");
+    const selected = (requestedId && data.articles.find((article) => article.id === requestedId)) || data.articles[0];
     setArticles(data.articles);
     setActiveId(selected?.id || "");
     setDraft(selected ? articleDraft(selected) : emptyDraft);
@@ -473,6 +474,7 @@ export default function ContentEditorPage() {
         <div className="ops-nav">
           <Link href="/ops-7q4m"><i>⌖</i>精确位置</Link>
           <Link className="current" href="/ops-7q4m/editor"><i>✎</i>内容管理</Link>
+          <Link href="/ops-7q4m/articles"><i>▤</i>文章列表管理</Link>
         </div>
         <div className="privacy-badge"><b>内容工作台</b><span>所有保存操作均要求管理员会话</span></div>
         <button className="ops-exit" onClick={logout}>安全退出</button>

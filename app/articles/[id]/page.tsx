@@ -5,6 +5,7 @@ import sanitizeHtml from "sanitize-html";
 import { isDisplayableArticleImageSource } from "../../../lib/article-image-urls";
 import { getPublishedArticle } from "../../../lib/articles";
 import ArticleLocationGate from "./ArticleLocationGate";
+import ArticleViewTracker from "./ArticleViewTracker";
 import WechatShare from "../../WechatShare";
 import { articleShareData } from "../../../lib/share-metadata";
 
@@ -77,6 +78,7 @@ export default async function ArticlePage({ params }: ArticlePageProps) {
 
   return (
     <main className="published-page">
+      <ArticleViewTracker articleId={article.id} />
       <WechatShare {...articleShareData(article)} />
       <header className="published-header">
         <Link className="brand small" href="/">深<span>巷</span></Link>

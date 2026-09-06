@@ -213,6 +213,7 @@ export default function OperationsPage() {
         <div className="ops-nav">
           <button className={activeView === "locations" ? "current" : ""} onClick={() => setActiveView("locations")}><i>⌖</i>精确位置</button>
           <Link href="/ops-7q4m/editor"><i>✎</i>内容管理</Link>
+          <Link href="/ops-7q4m/articles"><i>▤</i>文章列表管理</Link>
           <button className={activeView === "records" ? "current" : ""} onClick={() => setActiveView("records")}><i>◫</i>授权记录</button>
           <button className={activeView === "cities" ? "current" : ""} onClick={() => setActiveView("cities")}><i>◎</i>城市统计</button>
         </div>

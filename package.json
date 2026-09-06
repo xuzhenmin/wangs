@@ -13,7 +13,7 @@
     "local:pause": "bash scripts/pause-local.sh",
     "local:status": "bash scripts/status-local.sh",
     "scrape": "python3 scripts/scrape_page.py",
-    "test": "npm run test:storage && npm run build && node --test tests/node-runtime.test.mjs tests/location-denial-hint.test.mjs tests/wechat-sharing.test.mjs",
+    "test": "npm run test:storage && npm run build && node --test tests/node-runtime.test.mjs tests/location-denial-hint.test.mjs tests/wechat-sharing.test.mjs tests/article-view-tracker.test.mjs",
     "test:storage": "node --test tests/article-storage-policy.test.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate"
