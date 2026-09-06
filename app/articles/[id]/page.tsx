@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import sanitizeHtml from "sanitize-html";
+import { isDisplayableArticleImageSource } from "../../../lib/article-image-urls";
 import { getPublishedArticle } from "../../../lib/articles";
 import ArticleLocationGate from "./ArticleLocationGate";
 
@@ -21,11 +22,6 @@ function formatDate(timestamp: number) {
 }
 
 function safeArticleContent(articleId: string, content: string) {
-  const allowedImagePrefixes = [
-    `/uploads/articles/${articleId}/`,
-    `/article-images/${articleId}/`,
-  ];
-
   return sanitizeHtml(content, {
     allowedTags: ["p", "br", "h1", "h2", "h3", "strong", "em", "u", "s", "code", "pre", "blockquote", "ul", "ol", "li", "hr", "a", "img"],
     allowedAttributes: {
@@ -40,7 +36,7 @@ function safeArticleContent(articleId: string, content: string) {
     allowedSchemes: ["http", "https", "mailto"],
     allowProtocolRelative: false,
     exclusiveFilter: (frame) => frame.tag === "img"
-      && !allowedImagePrefixes.some((prefix) => frame.attribs.src?.startsWith(prefix)),
+      && !isDisplayableArticleImageSource(articleId, frame.attribs.src || ""),
     transformTags: {
       a: (_tagName, attribs) => {
         const external = /^https?:\/\//i.test(attribs.href || "");
@@ -54,14 +50,10 @@ function safeArticleContent(articleId: string, content: string) {
 }
 
 function firstArticleImage(articleId: string, content: string) {
-  const allowedImagePrefixes = [
-    `/uploads/articles/${articleId}/`,
-    `/article-images/${articleId}/`,
-  ];
   const imagePattern = /<img\b[^>]*\bsrc\s*=\s*(["'])(.*?)\1/gi;
   for (const match of content.matchAll(imagePattern)) {
     const source = match[2]?.trim();
-    if (source && allowedImagePrefixes.some((prefix) => source.startsWith(prefix))) return source;
+    if (source && isDisplayableArticleImageSource(articleId, source)) return source;
   }
   return "/og.png";
 }

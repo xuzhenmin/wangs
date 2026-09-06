@@ -3,7 +3,8 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { createServer } from "node:net";
+import { createServer as createHttpServer } from "node:http";
+import { createServer as createTcpServer } from "node:net";
 import { spawn } from "node:child_process";
 import test from "node:test";
 
@@ -11,7 +12,7 @@ const projectRoot = fileURLToPath(new URL("../", import.meta.url));
 const nextBin = fileURLToPath(new URL("../node_modules/next/dist/bin/next", import.meta.url));
 
 async function availablePort() {
-  const server = createServer();
+  const server = createTcpServer();
   await new Promise((resolve, reject) => {
     server.once("error", reject);
     server.listen(0, "127.0.0.1", resolve);
@@ -42,6 +43,27 @@ test("serves the site and persists consented locations with the Node runtime", a
   const port = await availablePort();
   const origin = `http://127.0.0.1:${port}`;
   const output = [];
+  const ossUploads = [];
+  const ossServer = createHttpServer((request, response) => {
+    const chunks = [];
+    request.on("data", (chunk) => chunks.push(chunk));
+    request.on("end", () => {
+      ossUploads.push({ method: request.method, url: request.url, body: Buffer.concat(chunks) });
+      response.writeHead(200, {
+        ETag: '"test-etag"',
+        "x-oss-request-id": "test-request-id",
+      });
+      response.end();
+    });
+  });
+  await new Promise((resolve, reject) => {
+    ossServer.once("error", reject);
+    ossServer.listen(0, "127.0.0.1", resolve);
+  });
+  const ossAddress = ossServer.address();
+  assert.ok(ossAddress && typeof ossAddress === "object");
+  const ossEndpoint = `http://127.0.0.1:${ossAddress.port}`;
+  const ossPublicBaseUrl = "https://test-bucket.oss-accelerate.aliyuncs.com";
   const articleSyncSecret = "test-article-sync-secret-with-enough-entropy";
   const child = spawn(process.execPath, [nextBin, "start", "--hostname", "127.0.0.1", "--port", String(port)], {
     cwd: projectRoot,
@@ -51,6 +73,14 @@ test("serves the site and persists consented locations with the Node runtime", a
       ADMIN_SESSION_SECRET: "test-session-secret-with-enough-entropy",
       ARTICLE_SYNC_SECRET: articleSyncSecret,
       ARTICLE_SYNC_ALLOW_PRIVATE: "true",
+      OSS_ACCESS_KEY_ID: "test-access-key-id",
+      OSS_ACCESS_KEY_SECRET: "test-access-key-secret",
+      OSS_BUCKET: "test-bucket",
+      OSS_REGION: "oss-cn-hangzhou",
+      OSS_ENDPOINT: ossEndpoint,
+      OSS_CNAME: "true",
+      OSS_ALLOW_INSECURE_ENDPOINT: "true",
+      OSS_PUBLIC_BASE_URL: ossPublicBaseUrl,
       LOCATION_DB_PATH: path.join(runtimeDirectory, "locations.sqlite"),
     },
     stdio: ["ignore", "pipe", "pipe"],
@@ -63,6 +93,7 @@ test("serves the site and persists consented locations with the Node runtime", a
       child.kill("SIGTERM");
       await new Promise((resolve) => child.once("exit", resolve));
     }
+    await new Promise((resolve, reject) => ossServer.close((error) => error ? reject(error) : resolve()));
     await rm(runtimeDirectory, { recursive: true, force: true });
   });
 
@@ -215,17 +246,17 @@ test("serves the site and persists consented locations with the Node runtime", a
   const draftPayload = await draftResponse.json();
   const articleId = draftPayload.article.id;
   const sourceImageDirectory = path.join(projectRoot, "public", "article-images", articleId);
-  const uploadedImageDirectory = path.join(projectRoot, "public", "uploads", "articles", articleId);
-  const sourceImagePath = path.join(sourceImageDirectory, "test.png");
+  const processedFilename = "0123456789abcdef01234567.png";
+  const sourceImagePath = path.join(sourceImageDirectory, processedFilename);
   const imageBytes = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
   await mkdir(sourceImageDirectory, { recursive: true });
   await writeFile(sourceImagePath, imageBytes);
   t.after(async () => {
     await rm(sourceImageDirectory, { recursive: true, force: true });
-    await rm(uploadedImageDirectory, { recursive: true, force: true });
   });
 
-  const sourceUrl = `/article-images/${articleId}/test.png`;
+  const sourceUrl = `/article-images/${articleId}/${processedFilename}`;
+  const ossImageUrl = `${ossPublicBaseUrl}/article-images/${articleId}/${processedFilename}`;
   const publishResponse = await fetch(`${origin}/api/admin/articles/${articleId}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json", Cookie: cookie },
@@ -239,6 +270,12 @@ test("serves the site and persists consented locations with the Node runtime", a
   assert.equal(publishResponse.status, 200);
   const publishPayload = await publishResponse.json();
   assert.equal(publishPayload.remoteSync, undefined);
+  assert.equal(publishPayload.uploadedImageCount, 1);
+  assert.match(publishPayload.article.content, new RegExp(ossImageUrl.replaceAll(".", "\\.")));
+  assert.equal(ossUploads.length, 1);
+  assert.equal(ossUploads[0].method, "PUT");
+  assert.equal(ossUploads[0].url, `/article-images/${articleId}/${processedFilename}`);
+  assert.deepEqual(ossUploads[0].body, imageBytes);
 
   const manualSyncResponse = await fetch(`${origin}/api/admin/articles/${articleId}/sync`, {
     method: "POST",
@@ -248,10 +285,10 @@ test("serves the site and persists consented locations with the Node runtime", a
   assert.equal(manualSyncResponse.status, 200);
   const manualSyncPayload = await manualSyncResponse.json();
   assert.equal(manualSyncPayload.remoteSync.status, "synced");
-  assert.equal(manualSyncPayload.remoteSync.uploadedImageCount, 1);
   assert.equal(manualSyncPayload.remoteSync.articleUrl, `${origin}/articles/${articleId}`);
+  assert.equal(ossUploads.length, 1);
 
   const publishedPage = await fetch(`${origin}/articles/${articleId}`);
   assert.equal(publishedPage.status, 200);
-  assert.match(await publishedPage.text(), new RegExp(`/uploads/articles/${articleId}/[a-f0-9]{24}\\.png`));
+  assert.match(await publishedPage.text(), new RegExp(ossImageUrl.replaceAll(".", "\\.")));
 });

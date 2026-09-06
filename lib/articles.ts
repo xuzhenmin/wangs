@@ -1,5 +1,8 @@
 import { getDb } from "../db";
-import { hasPendingArticleImages } from "./article-images";
+import {
+  assertArticleUsesOssImages,
+  publishProcessedArticleImagesToOss,
+} from "./oss-article-images";
 
 export type ArticleStatus = "draft" | "published";
 
@@ -17,7 +20,7 @@ export type ArticleInput = Pick<Article, "title" | "summary" | "content" | "stat
 
 export class ExternalImagesPendingError extends Error {
   constructor() {
-    super("正文仍有未本地化图片，请先点击“处理待处理图片”并按提示完成处理后再发布。");
+    super("正文图片尚未完成本地化、水印处理和 OSS 发布，请先处理图片后再发布。");
     this.name = "ExternalImagesPendingError";
   }
 }
@@ -79,13 +82,14 @@ export function articleExists(id: string) {
 }
 
 export async function createArticle(input: ArticleInput) {
-  if (input.status === "published" && hasPendingArticleImages(input.content)) {
-    throw new ExternalImagesPendingError();
-  }
   const id = crypto.randomUUID();
+  const publication = input.status === "published"
+    ? await publishProcessedArticleImagesToOss(id, input.content)
+    : { content: input.content, uploadedImageCount: 0 };
   const article: Article = {
     id,
     ...input,
+    content: publication.content,
     createdAt: Date.now(),
     updatedAt: Date.now(),
   };
@@ -100,15 +104,15 @@ export async function createArticle(input: ArticleInput) {
     article.createdAt,
     article.updatedAt,
   );
-  return { article };
+  return { article, uploadedImageCount: publication.uploadedImageCount };
 }
 
 export async function updateArticle(id: string, input: ArticleInput) {
   const exists = getDb().prepare("SELECT id FROM articles WHERE id = ?").get(id);
   if (!exists) return null;
-  if (input.status === "published" && hasPendingArticleImages(input.content)) {
-    throw new ExternalImagesPendingError();
-  }
+  const publication = input.status === "published"
+    ? await publishProcessedArticleImagesToOss(id, input.content)
+    : { content: input.content, uploadedImageCount: 0 };
   const updatedAt = Date.now();
   const result = getDb().prepare(`UPDATE articles SET
     title = ?,
@@ -119,7 +123,7 @@ export async function updateArticle(id: string, input: ArticleInput) {
   WHERE id = ?`).run(
     input.title,
     input.summary,
-    input.content,
+    publication.content,
     input.status,
     updatedAt,
     id,
@@ -134,7 +138,7 @@ export async function updateArticle(id: string, input: ArticleInput) {
     created_at AS createdAt,
     updated_at AS updatedAt
   FROM articles WHERE id = ?`).get(id) as unknown as Article;
-  return { article };
+  return { article, uploadedImageCount: publication.uploadedImageCount };
 }
 
 export function upsertSyncedArticle(
@@ -142,9 +146,10 @@ export function upsertSyncedArticle(
   input: ArticleInput,
   timestamps: { createdAt: number; updatedAt: number },
 ) {
-  if (input.status !== "published" || hasPendingArticleImages(input.content)) {
+  if (input.status !== "published") {
     throw new ExternalImagesPendingError();
   }
+  assertArticleUsesOssImages(id, input.content);
   const database = getDb();
   database.prepare(`INSERT INTO articles (
     id, title, summary, content, status, created_at, updated_at

@@ -31,8 +31,10 @@ LOCAL_SITE_HOST=0.0.0.0 npm run local:start
 才会恢复位置采集。浏览器自身已经授予的系统定位权限无法由网站重置。
 
 文章原始导入图片保存在 `public/uploads/articles/`，不会提交到 Git。添加本站
-水印后的发布图片保存在 `public/article-images/`，会随代码一起提交和部署。
-每篇文章单次最多下载 50 张普通外链图片，Blob 导入任务最多接收 50 张图片。
+水印后的图片先保存在 `public/article-images/`；发布文章时，正文引用到的处理图会通过
+OSS 传输加速 Endpoint 上传到 `article-images/{文章 UUID}/`，正文地址随即替换成固定的
+OSS 公共 HTTPS 地址。远端文章同步只发送 JSON，不再重复上传图片。
+每篇文章单次最多下载、处理和发布 50 张图片。
 
 ## Runtime configuration
 
@@ -40,10 +42,21 @@ LOCAL_SITE_HOST=0.0.0.0 npm run local:start
 - `ADMIN_SESSION_SECRET`: 会话签名密钥，必须设置为足够长的随机值
 - `ARTICLE_SYNC_SECRET`: 本地和远端共用的文章同步密钥，至少 32 个字符，且不要与后台密码或会话密钥相同
 - `ARTICLE_SYNC_ALLOW_PRIVATE`: 默认不设置；仅当目标是可信内网服务器时，在本地设置为 `true`
+- `OSS_ACCESS_KEY_ID`: 本地内容服务用于上传的 RAM AccessKey ID；不要放进浏览器代码或提交到 Git
+- `OSS_ACCESS_KEY_SECRET`: 本地内容服务用于上传的 RAM AccessKey Secret；远端展示服务器不需要该凭证
+- `OSS_BUCKET`: 公共读 Bucket 名称；本地和远端都需要，用于校验正文图片域名
+- `OSS_REGION`: Bucket 所在地域，V4 签名格式，如 `oss-cn-hangzhou`
+- `OSS_ENDPOINT`: 上传 Endpoint，默认 `https://oss-accelerate.aliyuncs.com`，不可包含 Bucket 名称
+- `OSS_ARTICLE_IMAGE_PREFIX`: Object 前缀，默认 `article-images`
+- `OSS_PUBLIC_BASE_URL`: 可选的固定公共域名或 CDN 域名；未设置时使用 `https://<bucket>.oss-accelerate.aliyuncs.com`
 - `LOCATION_DB_PATH`: SQLite 文件路径，默认 `data/wangs.sqlite`
 - `NEXT_PUBLIC_SITE_URL`: 网站对外访问地址，用于生成分享卡片和 canonical 的绝对链接，例如 `https://news.osfeng.cn`
 - `LOCAL_SITE_HOST`: 监听地址，默认 `127.0.0.1`；公网服务器可设置为 `0.0.0.0`
 - `LOCAL_SITE_PORT`: 监听端口，默认 `3217`
+
+Bucket 必须先在 OSS 控制台开启传输加速，并允许匿名读取文章图片；上传应使用仅拥有目标
+Bucket `article-images/*` 写权限的 RAM 身份。远端服务器只需配置 `OSS_BUCKET`、
+`OSS_ARTICLE_IMAGE_PREFIX`，以及使用自定义域名时的 `OSS_PUBLIC_BASE_URL`。
 
 ## Workspace Auth Headers
 
@@ -131,34 +144,38 @@ after the start command exits.
 
 ## 本地发布同步到远端
 
-远端服务器的 `.env` 只需配置接收密钥：
+远端服务器的 `.env` 配置接收密钥和 OSS 公共地址信息，不需要上传凭证：
 
 ```env
 ARTICLE_SYNC_SECRET=使用-openssl-rand-hex-32-生成的独立密钥
+OSS_BUCKET=你的Bucket名称
+OSS_ARTICLE_IMAGE_PREFIX=article-images
+# 如果正文使用自定义 CDN 域名，再设置：
+# OSS_PUBLIC_BASE_URL=https://images.example.com
 ```
 
-本地服务的 `.env.local` 配置相同密钥：
+本地内容服务的 `.env.local` 除相同密钥外，还需要 OSS 上传凭证：
 
 ```env
 ARTICLE_SYNC_SECRET=与远端完全相同的密钥
+OSS_ACCESS_KEY_ID=RAM用户AccessKeyID
+OSS_ACCESS_KEY_SECRET=RAM用户AccessKeySecret
+OSS_BUCKET=你的Bucket名称
+OSS_REGION=oss-cn-hangzhou
+OSS_ENDPOINT=https://oss-accelerate.aliyuncs.com
+OSS_ARTICLE_IMAGE_PREFIX=article-images
 ```
 
-“发布内容”或“发布更新”只保存到本地，不会连接远端。文章正式发布后，“全部文档”
-列表会出现上传图标；点击图标，在弹窗中输入远端网站根地址或公网 IP 并确认，文章正文
-和当前文章引用的本地图片才会上传。远端接口会按文章 ID 新增或更新内容，并将接收到的
-图片保存到 `public/uploads/articles/`。弹窗会显示上传成功链接，或显示失败原因。
+“发布内容”或“发布更新”会先把正文引用的处理后图片上传到 OSS，再把正文图片地址替换
+为固定的 OSS HTTPS 地址并保存到本地。任一图片上传失败时文章不会发布。文章正式发布后，
+“全部文档”列表会出现同步图标；点击图标，在弹窗中输入远端网站根地址或公网 IP 并确认，
+系统只发送文章 JSON。远端接口按文章 ID 新增或更新内容，不再接收或保存图片。
 
 同步目标默认必须解析到公网 IP，且不允许 HTTP 重定向。如果两台服务只通过可信内网
 通信，可仅在本地 `.env.local` 中显式配置 `ARTICLE_SYNC_ALLOW_PRIVATE=true`。
 
-同步接口单次最多接收 50 张图片、每张最多 8 MB、请求总体最多 64 MB。Nginx 需要在
-对应 `server` 或 `location` 中允许上传并延长代理超时，例如：
-
-```nginx
-client_max_body_size 64m;
-proxy_read_timeout 240s;
-proxy_send_timeout 240s;
-```
+发布时每篇文章最多上传 50 张图片，每张最多 8 MB；远端文章 JSON 同步请求最多 512 KB，
+不再需要为文章同步调大 Nginx 上传体积限制。
 
 The page saver respects `robots.txt`, filters common ad containers, and does not
 download images, video, scripts, forms, or watermarks. Run `npm run scrape` without

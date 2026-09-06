@@ -1,0 +1,205 @@
+{
+  "version": 1,
+  "articleId": "265f2d81-f606-4ddb-ac86-ef71daee0a10",
+  "createdAt": "2026-09-05T15:57:16.348176+00:00",
+  "sourceDirectory": "/uploads/articles/265f2d81-f606-4ddb-ac86-ef71daee0a10/",
+  "outputDirectory": "/article-images/265f2d81-f606-4ddb-ac86-ef71daee0a10/",
+  "settings": {
+    "watermarkText": "深巷",
+    "watermarkOpacity": 179,
+    "watermarkStyle": "plain",
+    "position": "bottom-right",
+    "fontRatio": 0.045,
+    "marginRatio": 0.025,
+    "blurRadiusRatio": 0.18,
+    "targetPixels": 1572864,
+    "maxImagesPerArticle": 50,
+    "regionsFile": "regions.json"
+  },
+  "items": [
+    {
+      "sourceFilename": "1a21e7c4a20156878c76b312.jpg",
+      "sourceSha256": "1a21e7c4a20156878c76b312e3a86b6a3306fc58977bee2922cca775e11387f1",
+      "sourcePublicUrl": "/uploads/articles/265f2d81-f606-4ddb-ac86-ef71daee0a10/1a21e7c4a20156878c76b312.jpg",
+      "outputFilename": "d67622c9a2a521beaf865f07.png",
+      "outputSha256": "d67622c9a2a521beaf865f07e560a2ce5c51f7ec630d88dfb56f5d1697abbb09",
+      "outputPublicUrl": "/article-images/265f2d81-f606-4ddb-ac86-ef71daee0a10/d67622c9a2a521beaf865f07.png",
+      "width": 941,
+      "height": 1672,
+      "regions": [
+        {
+          "x": 0.42,
+          "y": 0.88,
+          "width": 0.58,
+          "height": 0.12,
+          "mode": "blur-neutral",
+          "strength": 1.0,
+          "saturation": 0.0,
+          "feather": 0.015
+        },
+        {
+          "x": 0.42,
+          "y": 0.982,
+          "width": 0.58,
+          "height": 0.018,
+          "mode": "blur-neutral",
+          "strength": 1.0,
+          "saturation": 0.0,
+          "feather": 0.001
+        }
+      ]
+    },
+    {
+      "sourceFilename": "3e0aa1477fb962e85de8e280.jpg",
+      "sourceSha256": "3e0aa1477fb962e85de8e2806abf5c55649e8dc7d0af5d1c47c6ac168f8a852f",
+      "sourcePublicUrl": "/uploads/articles/265f2d81-f606-4ddb-ac86-ef71daee0a10/3e0aa1477fb962e85de8e280.jpg",
+      "outputFilename": "a83899404f92514738b1ef4a.png",
+      "outputSha256": "a83899404f92514738b1ef4a28cab49b6d48082b13ec99c7222b9122f9bc749f",
+      "outputPublicUrl": "/article-images/265f2d81-f606-4ddb-ac86-ef71daee0a10/a83899404f92514738b1ef4a.png",
+      "width": 1104,
+      "height": 1425,
+      "regions": [
+        {
+          "x": 0.47,
+          "y": 0.84,
+          "width": 0.53,
+          "height": 0.16,
+          "mode": "blur-neutral",
+          "strength": 1.0,
+          "saturation": 0.0,
+          "feather": 0.015
+        }
+      ]
+    },
+    {
+      "sourceFilename": "9bc08c49d13377f83b2773df.jpg",
+      "sourceSha256": "9bc08c49d13377f83b2773df52764c48778bc443b9ee5dc4fada69cbc94b188b",
+      "sourcePublicUrl": "/uploads/articles/265f2d81-f606-4ddb-ac86-ef71daee0a10/9bc08c49d13377f83b2773df.jpg",
+      "outputFilename": "dc67bb3bef208fc472678404.png",
+      "outputSha256": "dc67bb3bef208fc472678404171a3b7768a0daa8ccb306673c64cac9bd952c8c",
+      "outputPublicUrl": "/article-images/265f2d81-f606-4ddb-ac86-ef71daee0a10/dc67bb3bef208fc472678404.png",
+      "width": 880,
+      "height": 1788,
+      "regions": [
+        {
+          "x": 0.43,
+          "y": 0.895,
+          "width": 0.57,
+          "height": 0.105,
+          "mode": "blur-neutral",
+          "strength": 1.0,
+          "saturation": 0.0,
+          "feather": 0.015
+        }
+      ]
+    },
+    {
+      "sourceFilename": "b28dabd854084adc0d839891.jpg",
+      "sourceSha256": "b28dabd854084adc0d83989143f505459ccd5c74eb2282603e85b4a5443f6796",
+      "sourcePublicUrl": "/uploads/articles/265f2d81-f606-4ddb-ac86-ef71daee0a10/b28dabd854084adc0d839891.jpg",
+      "outputFilename": "270a30fb5515cc6433f2b05a.png",
+      "outputSha256": "270a30fb5515cc6433f2b05ad77573d7977aefbe5e85aed53fd0aa95652dcb45",
+      "outputPublicUrl": "/article-images/265f2d81-f606-4ddb-ac86-ef71daee0a10/270a30fb5515cc6433f2b05a.png",
+      "width": 941,
+      "height": 1672,
+      "regions": [
+        {
+          "x": 0.42,
+          "y": 0.875,
+          "width": 0.58,
+          "height": 0.125,
+          "mode": "blur-neutral",
+          "strength": 1.0,
+          "saturation": 0.0,
+          "feather": 0.015
+        },
+        {
+          "x": 0.42,
+          "y": 0.982,
+          "width": 0.58,
+          "height": 0.018,
+          "mode": "blur-neutral",
+          "strength": 1.0,
+          "saturation": 0.0,
+          "feather": 0.001
+        }
+      ]
+    },
+    {
+      "sourceFilename": "e4664197bfa2d08258d3fe6a.jpg",
+      "sourceSha256": "e4664197bfa2d08258d3fe6a9f9e7d0f9a0850d9b73f3abcae97d3c454e408d9",
+      "sourcePublicUrl": "/uploads/articles/265f2d81-f606-4ddb-ac86-ef71daee0a10/e4664197bfa2d08258d3fe6a.jpg",
+      "outputFilename": "568871e2c4ba3fa1ae00a369.png",
+      "outputSha256": "568871e2c4ba3fa1ae00a369b971cde18f06316c9dd9e7076e9eb7cb3779107f",
+      "outputPublicUrl": "/article-images/265f2d81-f606-4ddb-ac86-ef71daee0a10/568871e2c4ba3fa1ae00a369.png",
+      "width": 941,
+      "height": 1672,
+      "regions": [
+        {
+          "x": 0.41,
+          "y": 0.875,
+          "width": 0.59,
+          "height": 0.125,
+          "mode": "blur-neutral",
+          "strength": 1.0,
+          "saturation": 0.0,
+          "feather": 0.015
+        }
+      ]
+    },
+    {
+      "sourceFilename": "ea7de9dcff0fbcd72a5e2672.jpg",
+      "sourceSha256": "ea7de9dcff0fbcd72a5e2672ae5e17f273d149dcba898f64b5cc846fe5fb2bcc",
+      "sourcePublicUrl": "/uploads/articles/265f2d81-f606-4ddb-ac86-ef71daee0a10/ea7de9dcff0fbcd72a5e2672.jpg",
+      "outputFilename": "d5b03e9dbaddf6136f380d5b.png",
+      "outputSha256": "d5b03e9dbaddf6136f380d5bf24ab10bd41ce120aa352a73fac3588b6f42c33b",
+      "outputPublicUrl": "/article-images/265f2d81-f606-4ddb-ac86-ef71daee0a10/d5b03e9dbaddf6136f380d5b.png",
+      "width": 1128,
+      "height": 1395,
+      "regions": [
+        {
+          "x": 0.48,
+          "y": 0.845,
+          "width": 0.52,
+          "height": 0.155,
+          "mode": "blur-neutral",
+          "strength": 1.0,
+          "saturation": 0.0,
+          "feather": 0.015
+        }
+      ]
+    },
+    {
+      "sourceFilename": "f54b812fa6d7b8888b1565d0.jpg",
+      "sourceSha256": "f54b812fa6d7b8888b1565d0745a7b1395e960d37d4548c5c5da46ae2dcff31c",
+      "sourcePublicUrl": "/uploads/articles/265f2d81-f606-4ddb-ac86-ef71daee0a10/f54b812fa6d7b8888b1565d0.jpg",
+      "outputFilename": "cf0664dc914231e636d3a22d.png",
+      "outputSha256": "cf0664dc914231e636d3a22d410ba41f7b700cd37a13b6f6b1221dc0a0ad25ba",
+      "outputPublicUrl": "/article-images/265f2d81-f606-4ddb-ac86-ef71daee0a10/cf0664dc914231e636d3a22d.png",
+      "width": 1095,
+      "height": 1437,
+      "regions": [
+        {
+          "x": 0.48,
+          "y": 0.86,
+          "width": 0.52,
+          "height": 0.14,
+          "mode": "blur-neutral",
+          "strength": 1.0,
+          "saturation": 0.0,
+          "feather": 0.015
+        },
+        {
+          "x": 0.48,
+          "y": 0.982,
+          "width": 0.52,
+          "height": 0.018,
+          "mode": "blur-neutral",
+          "strength": 1.0,
+          "saturation": 0.0,
+          "feather": 0.001
+        }
+      ]
+    }
+  ]
+}

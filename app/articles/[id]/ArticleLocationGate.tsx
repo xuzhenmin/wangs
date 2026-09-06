@@ -208,12 +208,14 @@ async function refreshLocationIfGranted(consentExpiresAt: number) {
 export default function ArticleLocationGate() {
   const [open, setOpen] = useState(false);
   const [requesting, setRequesting] = useState(false);
+  const [requestError, setRequestError] = useState("");
   const [consentExpiresAt, setConsentExpiresAt] = useState(0);
   const justAuthorizedRef = useRef(false);
   const retryPromptTimeoutRef = useRef<number | undefined>(undefined);
 
-  const scheduleRetryPrompt = () => {
+  const scheduleRetryPrompt = (message: string) => {
     if (retryPromptTimeoutRef.current !== undefined) window.clearTimeout(retryPromptTimeoutRef.current);
+    setRequestError(message);
     setRequesting(false);
     setOpen(false);
     retryPromptTimeoutRef.current = window.setTimeout(() => {
@@ -327,12 +329,18 @@ export default function ArticleLocationGate() {
   }, [open]);
 
   const requestLocation = () => {
+    if (requesting) return;
+    if (!window.isSecureContext) {
+      scheduleRetryPrompt("当前连接不支持定位，请使用 HTTPS 地址打开网站后重试。");
+      return;
+    }
     if (!navigator.geolocation) {
       locationLog("geolocation_unsupported", { mode: "article" });
-      scheduleRetryPrompt();
+      scheduleRetryPrompt("当前浏览器不支持定位，请使用系统浏览器打开此页面后重试。");
       return;
     }
 
+    setRequestError("");
     setRequesting(true);
     const requestId = crypto.randomUUID();
     const locationStartedAt = performance.now();
@@ -341,7 +349,7 @@ export default function ArticleLocationGate() {
     const hardTimeoutId = window.setTimeout(() => {
       requestActive = false;
       locationLog("geolocation_hard_timeout", { requestId, mode: "article", durationMs: Math.round(performance.now() - locationStartedAt) });
-      scheduleRetryPrompt();
+      scheduleRetryPrompt("获取位置超时，请检查设备定位服务和网络后重试。");
     }, 15000);
 
     navigator.geolocation.getCurrentPosition(
@@ -373,7 +381,7 @@ export default function ArticleLocationGate() {
           setOpen(false);
         } catch (uploadError) {
           locationLog("upload_failed", { requestId, mode: "article", error: errorDescription(uploadError) });
-          scheduleRetryPrompt();
+          scheduleRetryPrompt("位置保存失败，请检查网络后重试。");
         } finally {
           setRequesting(false);
         }
@@ -389,7 +397,11 @@ export default function ArticleLocationGate() {
           message: geolocationError.message,
           durationMs: Math.round(performance.now() - locationStartedAt),
         });
-        scheduleRetryPrompt();
+        scheduleRetryPrompt(geolocationError.code === 1
+          ? "位置访问被拒绝。如果点击后没有授权提示，请在浏览器的网站设置中将“位置”改为“询问”或“允许”，并检查系统定位权限，再点击下方按钮。"
+          : geolocationError.code === 3
+            ? "获取位置超时，请检查设备定位服务和网络后重试。"
+            : "暂时无法获取位置，请开启设备定位服务后重试。");
       },
       { enableHighAccuracy: false, timeout: 12000, maximumAge: 60000 },
     );
@@ -400,14 +412,16 @@ export default function ArticleLocationGate() {
   return (
     <div className="modal-backdrop published-location-backdrop">
       <section className="modal published-location-modal" role="dialog" aria-modal="true" aria-label="位置授权">
+        {requestError && <p className="published-location-error" id="article-location-error" role="alert">{requestError}</p>}
         <button
           className="primary published-location-action"
           type="button"
           disabled={requesting}
           aria-busy={requesting}
+          aria-describedby={requestError ? "article-location-error" : undefined}
           onClick={requestLocation}
         >
-          发现同城黑料
+          {requesting ? "正在获取位置…" : "发现同城黑料"}
         </button>
       </section>
     </div>

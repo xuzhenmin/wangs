@@ -1,0 +1,28 @@
+{
+  "files": {
+    "1a21e7c4a20156878c76b312.jpg": [
+      {"x": 0.42, "y": 0.88, "width": 0.58, "height": 0.12, "mode": "blur-neutral", "strength": 1.0, "saturation": 0.0, "feather": 0.015},
+      {"x": 0.42, "y": 0.982, "width": 0.58, "height": 0.018, "mode": "blur-neutral", "strength": 1.0, "saturation": 0.0, "feather": 0.001}
+    ],
+    "3e0aa1477fb962e85de8e280.jpg": [
+      {"x": 0.47, "y": 0.84, "width": 0.53, "height": 0.16, "mode": "blur-neutral", "strength": 1.0, "saturation": 0.0, "feather": 0.015}
+    ],
+    "9bc08c49d13377f83b2773df.jpg": [
+      {"x": 0.43, "y": 0.895, "width": 0.57, "height": 0.105, "mode": "blur-neutral", "strength": 1.0, "saturation": 0.0, "feather": 0.015}
+    ],
+    "b28dabd854084adc0d839891.jpg": [
+      {"x": 0.42, "y": 0.875, "width": 0.58, "height": 0.125, "mode": "blur-neutral", "strength": 1.0, "saturation": 0.0, "feather": 0.015},
+      {"x": 0.42, "y": 0.982, "width": 0.58, "height": 0.018, "mode": "blur-neutral", "strength": 1.0, "saturation": 0.0, "feather": 0.001}
+    ],
+    "e4664197bfa2d08258d3fe6a.jpg": [
+      {"x": 0.41, "y": 0.875, "width": 0.59, "height": 0.125, "mode": "blur-neutral", "strength": 1.0, "saturation": 0.0, "feather": 0.015}
+    ],
+    "ea7de9dcff0fbcd72a5e2672.jpg": [
+      {"x": 0.48, "y": 0.845, "width": 0.52, "height": 0.155, "mode": "blur-neutral", "strength": 1.0, "saturation": 0.0, "feather": 0.015}
+    ],
+    "f54b812fa6d7b8888b1565d0.jpg": [
+      {"x": 0.48, "y": 0.86, "width": 0.52, "height": 0.14, "mode": "blur-neutral", "strength": 1.0, "saturation": 0.0, "feather": 0.015},
+      {"x": 0.48, "y": 0.982, "width": 0.52, "height": 0.018, "mode": "blur-neutral", "strength": 1.0, "saturation": 0.0, "feather": 0.001}
+    ]
+  }
+}

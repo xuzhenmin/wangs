@@ -37,7 +37,6 @@ type ImageImportProgress = {
 type RemoteSyncResult = {
   status: "synced" | "failed";
   articleUrl?: string;
-  uploadedImageCount?: number;
   detail?: string;
 };
 
@@ -52,11 +51,12 @@ function articleDraft(article: Article): Draft {
   };
 }
 
-function countImageSources(content: string) {
+function countImageSources(content: string, articleId: string, articleImageBaseUrl: string) {
   const sources = [...content.matchAll(/<img\b[^>]*\bsrc\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/gi)]
     .map((match) => (match[1] || match[2] || match[3] || "").trim());
+  const ossPrefix = articleId && articleImageBaseUrl ? `${articleImageBaseUrl}/${articleId}/` : "";
   return {
-    external: new Set(sources.filter((source) => /^https?:\/\//i.test(source))).size,
+    external: new Set(sources.filter((source) => /^https?:\/\//i.test(source) && (!ossPrefix || !source.startsWith(ossPrefix)))).size,
     blob: new Set(sources.filter((source) => /^blob:/i.test(source))).size,
   };
 }
@@ -98,6 +98,7 @@ export default function ContentEditorPage() {
   const [password, setPassword] = useState("");
   const [loginError, setLoginError] = useState("");
   const [articles, setArticles] = useState<Article[]>([]);
+  const [articleImageBaseUrl, setArticleImageBaseUrl] = useState("");
   const [activeId, setActiveId] = useState("");
   const [draft, setDraft] = useState<Draft>(emptyDraft);
   const [view, setView] = useState<EditorView>("split");
@@ -119,7 +120,10 @@ export default function ContentEditorPage() {
     if (!activeArticle) return Boolean(draft.title || draft.summary || draft.content);
     return JSON.stringify(articleDraft(activeArticle)) !== JSON.stringify(draft);
   }, [activeArticle, draft]);
-  const imageSourceCounts = useMemo(() => countImageSources(draft.content), [draft.content]);
+  const imageSourceCounts = useMemo(
+    () => countImageSources(draft.content, activeId, articleImageBaseUrl),
+    [draft.content, activeId, articleImageBaseUrl],
+  );
   const pendingImageCount = imageSourceCounts.external + imageSourceCounts.blob;
 
   const loadArticles = useCallback(async () => {
@@ -130,11 +134,12 @@ export default function ContentEditorPage() {
       return;
     }
     if (!response.ok) throw new Error("article-load-failed");
-    const data = await response.json() as { articles: Article[] };
+    const data = await response.json() as { articles: Article[]; articleImageBaseUrl?: string | null };
     const selected = data.articles[0];
     setArticles(data.articles);
     setActiveId(selected?.id || "");
     setDraft(selected ? articleDraft(selected) : emptyDraft);
+    setArticleImageBaseUrl(data.articleImageBaseUrl || "");
     setUnlocked(true);
     setChecking(false);
   }, []);
@@ -267,9 +272,9 @@ export default function ContentEditorPage() {
         setUnlocked(false);
         return;
       }
-      const data = await response.json() as { article?: Article; detail?: string };
+      const data = await response.json() as { article?: Article; uploadedImageCount?: number; detail?: string };
       if (!response.ok || !data.article) {
-        if (response.status === 409 && data.detail) {
+        if (data.detail) {
           setMessage(data.detail);
           return;
         }
@@ -280,7 +285,9 @@ export default function ContentEditorPage() {
       setActiveId(savedArticle.id);
       setDraft(articleDraft(savedArticle));
       const savedMessage = status === "published"
-        ? "内容已发布到本地；需要上传远端时，请点击左侧文档上的上传图标。"
+        ? data.uploadedImageCount
+          ? `内容已发布，${data.uploadedImageCount} 张处理后图片已上传 OSS；需要同步文章时，请点击左侧文档上的上传图标。`
+          : "内容已发布，正文图片使用 OSS；需要同步文章时，请点击左侧文档上的上传图标。"
         : activeId ? "草稿修改已保存。" : "草稿已创建。";
       setMessage(savedMessage);
     } catch {
@@ -416,7 +423,7 @@ export default function ContentEditorPage() {
         }));
         setMessage(`${localizedImageCount ? `${localizedImageCount} 张普通外链图片已处理。` : ""} Blob 导入任务已创建，请切换到原网页点击“发送图片到编辑器”。`);
       } else {
-        setMessage(`${localizedImageCount} 张外链图片已下载并替换为本地地址，右侧预览已更新；请保存草稿或发布。`);
+        setMessage(`${localizedImageCount} 张外链图片已下载到原图目录；请完成水印处理并替换为 /article-images/ 地址，发布时会自动上传 OSS。`);
       }
     } catch {
       setMessage("图片处理失败，请稍后重试。");
@@ -479,8 +486,8 @@ export default function ContentEditorPage() {
                     <button
                       className="document-sync-button"
                       type="button"
-                      title="上传到远端服务器"
-                      aria-label={`上传《${article.title}》到远端服务器`}
+                      title="同步文章到远端服务器"
+                      aria-label={`同步《${article.title}》到远端服务器`}
                       onClick={() => openRemoteSync(article)}
                     >⇧</button>
                   )}
@@ -574,8 +581,8 @@ export default function ContentEditorPage() {
           <section className="modal article-sync-modal" role="dialog" aria-modal="true" aria-labelledby="article-sync-title">
             <button className="modal-close" type="button" aria-label="关闭" disabled={syncingRemote} onClick={closeRemoteSync}>×</button>
             <span className="modal-index">REMOTE PUBLISH</span>
-            <h2 id="article-sync-title">上传到远端服务器</h2>
-            <p>《{syncArticle.title}》已在本地正式发布。确认后将上传文章正文及其中引用的全部本地图片。</p>
+            <h2 id="article-sync-title">同步到远端服务器</h2>
+            <p>《{syncArticle.title}》已在本地正式发布。确认后只同步文章数据，正文图片继续使用阿里云 OSS 地址。</p>
             <form onSubmit={uploadToRemote}>
               <label>
                 远端服务器网址或公网 IP
@@ -593,7 +600,7 @@ export default function ContentEditorPage() {
                   <b>{remoteSyncResult.status === "synced" ? "上传成功" : "上传失败"}</b>
                   <span>
                     {remoteSyncResult.status === "synced"
-                      ? `文章和 ${remoteSyncResult.uploadedImageCount || 0} 张图片已写入远端。`
+                      ? "文章已写入远端，未重复上传图片。"
                       : remoteSyncResult.detail || "未知错误。"}
                   </span>
                   {remoteSyncResult.articleUrl && <a href={remoteSyncResult.articleUrl} target="_blank" rel="noreferrer">打开远端内容页 ↗</a>}
@@ -601,7 +608,7 @@ export default function ContentEditorPage() {
               )}
               <div className="article-sync-actions">
                 <button className="secondary" type="button" disabled={syncingRemote} onClick={closeRemoteSync}>取消</button>
-                <button className="primary" type="submit" disabled={syncingRemote}>{syncingRemote ? "正在上传…" : remoteSyncResult?.status === "synced" ? "重新上传" : "确认上传"}</button>
+                <button className="primary" type="submit" disabled={syncingRemote}>{syncingRemote ? "正在同步…" : remoteSyncResult?.status === "synced" ? "重新同步" : "确认同步"}</button>
               </div>
             </form>
           </section>
