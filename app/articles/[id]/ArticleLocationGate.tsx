@@ -575,7 +575,6 @@ export default function ArticleLocationGate({ content }: { content: string }) {
       {collapsed && (
         <section ref={previewNoticeRef} tabIndex={-1} className="published-content-unlock" aria-label="展开剩余内容">
           <p role="status">{canExpand ? "点击展开阅读全文。" : "允许位置访问后，可展开阅读全文。"}</p>
-          {!canExpand && <p id="article-location-settings">授权定位后，平台会解析并保存位置信息。若已拒绝，请在浏览器的网站设置中允许位置访问后重试。</p>}
           {requestError && <p className="published-location-error" id="article-location-inline-error" role="alert">{requestError}</p>}
           <button
             className="published-content-expand"
@@ -586,7 +585,7 @@ export default function ArticleLocationGate({ content }: { content: string }) {
             aria-busy={checkingConsent || (requesting && !canExpand)}
             aria-expanded={false}
             aria-controls="article-readable-content"
-            aria-describedby={[!canExpand && "article-location-settings", requestError && "article-location-inline-error"].filter(Boolean).join(" ") || undefined}
+            aria-describedby={requestError ? "article-location-inline-error" : undefined}
             onClick={expandContent}
           >
               <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
