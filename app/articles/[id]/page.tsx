@@ -12,17 +12,6 @@ export const dynamic = "force-dynamic";
 
 type ArticlePageProps = { params: Promise<{ id: string }> };
 
-function formatDate(timestamp: number) {
-  return new Intl.DateTimeFormat("zh-CN", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZone: "Asia/Shanghai",
-  }).format(new Date(timestamp));
-}
-
 function safeArticleContent(articleId: string, content: string) {
   return sanitizeHtml(content, {
     allowedTags: ["p", "br", "h1", "h2", "h3", "strong", "em", "u", "s", "code", "pre", "blockquote", "ul", "ol", "li", "hr", "a", "img"],
@@ -97,7 +86,7 @@ export default async function ArticlePage({ params }: ArticlePageProps) {
         <span className="published-kicker">PUBLISHED ARTICLE</span>
         <h1>{article.title}</h1>
         {article.summary && <p className="published-summary">{article.summary}</p>}
-        <div className="published-meta"><span>深巷内容编辑部</span><time>更新于 {formatDate(article.updatedAt)}</time></div>
+        <div className="published-meta"><span>深巷内容编辑部</span></div>
         <div className="published-divider" />
         <ArticleLocationGate key={article.id} content={content} />
       </article>

@@ -555,5 +555,9 @@ test("serves the site and persists consented locations with the Node runtime", a
 
   const publishedPage = await fetch(`${origin}/articles/${articleId}`);
   assert.equal(publishedPage.status, 200);
-  assert.match(await publishedPage.text(), new RegExp(ossImageUrl.replaceAll(".", "\\.")));
+  const publishedHtml = await publishedPage.text();
+  assert.match(publishedHtml, new RegExp(ossImageUrl.replaceAll(".", "\\.")));
+  assert.match(publishedHtml, /<div class="published-meta"><span>深巷内容编辑部<\/span><\/div>/);
+  assert.doesNotMatch(publishedHtml, /<time\b[^>]*>更新于/);
+  assert.match(publishedHtml, /property="article:modified_time"/);
 });
