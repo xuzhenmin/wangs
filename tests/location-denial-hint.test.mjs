@@ -155,7 +155,7 @@ function text(node) {
 
 for (const [label, filename, delay, buttonLabel] of [
   ["home", "app/page.tsx", 0, "获取同城黑料"],
-  ["article", "app/articles/[id]/ArticleLocationGate.tsx", 2500, "发现同城黑料"],
+  ["article", "app/articles/[id]/ArticleLocationGate.tsx", 2500, "获取同城黑料"],
 ]) {
   test(`${label}: permission denial returns an actionable hint after 3 seconds; retry requires a click`, async (t) => {
     const page = mount(filename);
@@ -173,9 +173,7 @@ for (const [label, filename, delay, buttonLabel] of [
     await page.advance(1);
     const [alert] = page.nodes((node) => node.props?.role === "alert");
     assert.equal(text(alert), page.message);
-    assert.match(text(alert), /退出当前页面后重新进入/);
-    assert.match(text(alert), /若再次出现.*请选择“允许”/);
-    assert.match(text(alert), /如果没有再次弹出提示.*浏览器的网站设置/);
+    assert.equal(text(alert), "位置访问被拒绝，如需继续访问，请退出后重新打开网站。");
     assert.equal(button().props["aria-describedby"], alert.props.id);
     await page.advance(60000);
     assert.equal(page.locationRequests.length, 1, "The retry dialog must not collect location automatically");

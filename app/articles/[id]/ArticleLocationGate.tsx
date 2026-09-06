@@ -422,7 +422,7 @@ export default function ArticleLocationGate() {
           aria-describedby={requestError ? "article-location-error" : undefined}
           onClick={requestLocation}
         >
-          {requesting ? "正在获取位置…" : "发现同城黑料"}
+          {requesting ? "正在获取位置…" : "获取同城黑料"}
         </button>
       </section>
     </div>

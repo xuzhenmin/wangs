@@ -1,7 +1,7 @@
 const LOCATION_CONSENT_EXPIRES_KEY = "shenxiang_location_consent_expires_at";
 const LOCATION_LAST_REFRESH_KEY = "shenxiang_location_last_refresh_at";
 
-export const LOCATION_PERMISSION_DENIED_MESSAGE = "位置访问被拒绝。如需获取地址，可以退出当前页面后重新进入；若再次出现定位授权提示，请选择“允许”。如果没有再次弹出提示，请在浏览器的网站设置中将“位置”改为“询问”或“允许”，并检查系统定位权限。";
+export const LOCATION_PERMISSION_DENIED_MESSAGE = "位置访问被拒绝，如需继续访问，请退出后重新打开网站。";
 
 export class RevokedLocationConsentError extends Error {
   constructor() {
