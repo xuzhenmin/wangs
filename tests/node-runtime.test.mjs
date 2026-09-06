@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { createServer as createHttpServer } from "node:http";
 import { createServer as createTcpServer } from "node:net";
 import { spawn } from "node:child_process";
+import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 
 const projectRoot = fileURLToPath(new URL("../", import.meta.url));
@@ -143,6 +144,18 @@ test("serves the site and persists consented locations with the Node runtime", a
   assert.equal(emptyHeadlines.headers.get("cache-control"), "no-store");
   assert.deepEqual(await emptyHeadlines.json(), { articles: [] });
 
+  const checkConsent = async (deviceId) => {
+    const response = await fetch(`${origin}/api/location/consent-status`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ deviceId }),
+    });
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("cache-control"), "no-store");
+    return response.json();
+  };
+  assert.deepEqual(await checkConsent("unknown-device"), { authorized: false, revoked: false });
+
   const locationResponse = await fetch(`${origin}/api/location`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -175,6 +188,29 @@ test("serves the site and persists consented locations with the Node runtime", a
   assert.equal(payload.locations.length, 1);
   assert.equal(payload.locations[0].city, "上海市");
   assert.equal(payload.locations[0].deviceId, "integration-test-device");
+  assert.deepEqual(await checkConsent("integration-test-device"), { authorized: true, revoked: false });
+
+  // Only the isolated test database is modified to exercise expiry boundaries.
+  const testDb = new DatabaseSync(path.join(runtimeDirectory, "locations.sqlite"));
+  try {
+    const insertFixture = testDb.prepare(`INSERT INTO consented_locations
+      (id, device_id, city, address, latitude, longitude, accuracy, consented_at, updated_at, expires_at)
+      VALUES (?, ?, 'test', 'test', 0, 0, 1, ?, ?, ?)`);
+    const now = Date.now();
+    const day = 24 * 60 * 60 * 1000;
+    for (const [id, daysAgo] of [["valid-29-days", 29], ["expired-30-days", 30], ["expired-31-days", 31], ["future-consent", -1]]) {
+      insertFixture.run(id, id, now - daysAgo * day, now, now - day);
+    }
+    assert.deepEqual(await checkConsent("valid-29-days"), { authorized: true, revoked: false });
+    assert.deepEqual(await checkConsent("expired-30-days"), { authorized: false, revoked: false });
+    assert.deepEqual(await checkConsent("expired-31-days"), { authorized: false, revoked: false });
+    assert.deepEqual(await checkConsent("future-consent"), { authorized: false, revoked: false });
+    testDb.prepare("INSERT INTO revoked_location_consents (device_id, revoked_at) VALUES (?, ?)").run("valid-29-days", now);
+    assert.deepEqual(await checkConsent("valid-29-days"), { authorized: false, revoked: true });
+    assert.deepEqual(await checkConsent("integration-test-device"), { authorized: true, revoked: false }, "Revoking one browser must not affect another");
+  } finally {
+    testDb.close();
+  }
 
   const initialConsentedAt = payload.locations[0].consentedAt;
   const refreshLocationResponse = await fetch(`${origin}/api/location`, {
@@ -220,7 +256,7 @@ test("serves the site and persists consented locations with the Node runtime", a
     body: JSON.stringify({ deviceId: "integration-test-device" }),
   });
   assert.equal(revokedStatusResponse.status, 200);
-  assert.deepEqual(await revokedStatusResponse.json(), { revoked: true });
+  assert.deepEqual(await revokedStatusResponse.json(), { authorized: false, revoked: true });
 
   const emptyLocationsResponse = await fetch(`${origin}/api/admin/locations`, { headers: { Cookie: cookie } });
   assert.equal(emptyLocationsResponse.status, 200);
@@ -264,7 +300,7 @@ test("serves the site and persists consented locations with the Node runtime", a
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ deviceId: "integration-test-device" }),
   });
-  assert.deepEqual(await renewedStatusResponse.json(), { revoked: false });
+  assert.deepEqual(await renewedStatusResponse.json(), { authorized: true, revoked: false });
 
   const renewedLocationsResponse = await fetch(`${origin}/api/admin/locations`, { headers: { Cookie: cookie } });
   const renewedLocationsPayload = await renewedLocationsResponse.json();

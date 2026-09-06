@@ -7,6 +7,7 @@ import {
   clearStoredLocationConsent,
   getStoredLocationConsentExpiry,
   isStoredLocationConsentRevoked,
+  isStoredLocationAuthorized,
   rememberLocationConsent,
   scheduleLocationRefresh,
   LOCATION_PERMISSION_DENIED_MESSAGE,
@@ -26,7 +27,7 @@ type AddressResolutionDiagnostics = {
   error?: string;
 };
 
-const LOCATION_CONSENT_TTL_MS = 100 * 24 * 60 * 60 * 1000;
+const LOCATION_CONSENT_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const LOCATION_EXPIRY_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const LOCATION_PROMPT_DELAY_MS = 2500;
 const LOCATION_RETRY_DELAY_MS = 3000;
@@ -537,12 +538,12 @@ export default function ArticleLocationGate({ content }: { content: string }) {
     setCheckingConsent(true);
     setRequestError("");
     try {
-      const revoked = await isStoredLocationConsentRevoked();
+      const authorized = await isStoredLocationAuthorized();
       if (!mountedRef.current) return;
       if (localStorage.getItem("shenxiang_device_id") !== deviceId) {
         throw new Error("location-identity-changed");
       }
-      if (revoked) {
+      if (!authorized) {
         clearStoredLocationConsent();
         setConsentExpiresAt(0);
         setCanExpand(false);

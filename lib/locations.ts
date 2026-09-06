@@ -74,6 +74,20 @@ export function isLocationConsentRevoked(deviceId: string) {
   return Boolean(getDb().prepare("SELECT 1 FROM revoked_location_consents WHERE device_id = ? LIMIT 1").get(deviceId));
 }
 
+export function getLocationConsentStatus(deviceId: string) {
+  const now = Date.now();
+  const consentTtl = 30 * 24 * 60 * 60 * 1000;
+  // expires_at is refreshed with address retention, not the original consent.
+  // Background refreshes preserve consented_at and must not renew consent.
+  const status = getDb().prepare(`SELECT
+    EXISTS(SELECT 1 FROM revoked_location_consents WHERE device_id = ?) AS revoked,
+    EXISTS(SELECT 1 FROM consented_locations
+      WHERE device_id = ? AND consented_at <= ? AND consented_at > ?) AS active
+  `).get(deviceId, deviceId, now, now - consentTtl) as { revoked: number; active: number };
+  const revoked = Boolean(status.revoked);
+  return { authorized: Boolean(status.active) && !revoked, revoked };
+}
+
 export function revokeLocationConsent(id: string) {
   const database = getDb();
   return transaction(() => {

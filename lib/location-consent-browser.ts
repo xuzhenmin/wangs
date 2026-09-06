@@ -1,7 +1,7 @@
 const LOCATION_CONSENT_EXPIRES_KEY = "shenxiang_location_consent_expires_at";
 const LOCATION_LAST_REFRESH_KEY = "shenxiang_location_last_refresh_at";
 const LOCATION_AUTHORIZED_AT_KEY = "shenxiang_location_authorized_at";
-const LOCATION_CONSENT_TTL_MS = 100 * 24 * 60 * 60 * 1000;
+const LOCATION_CONSENT_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const LOCATION_REFRESH_INTERVAL_MS = 30 * 60 * 1000;
 
 function locationRefreshDelay() {
@@ -67,7 +67,9 @@ export function getStoredLocationConsentExpiry() {
   } catch {
     return 0;
   }
-  return expiry;
+  // Without an original grant timestamp, an old cached expiry cannot prove
+  // consent is still inside the current validity window.
+  return 0;
 }
 
 // Record the user's successful, explicit browser grant before address/network
@@ -94,9 +96,9 @@ export function clearStoredLocationConsent() {
   localStorage.removeItem(LOCATION_LAST_REFRESH_KEY);
 }
 
-export async function isStoredLocationConsentRevoked() {
+async function getStoredLocationConsentStatus() {
   const deviceId = localStorage.getItem("shenxiang_device_id");
-  if (!deviceId) return false;
+  if (!deviceId) return { authorized: false, revoked: false };
   const response = await fetch("/api/location/consent-status", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -105,9 +107,19 @@ export async function isStoredLocationConsentRevoked() {
     signal: AbortSignal.timeout(8000),
   });
   if (!response.ok) throw new Error(`location-consent-status-http-${response.status}`);
-  const result = await response.json() as { revoked?: unknown };
+  return await response.json() as { authorized?: unknown; revoked?: unknown };
+}
+
+export async function isStoredLocationConsentRevoked() {
+  const result = await getStoredLocationConsentStatus();
   if (typeof result.revoked !== "boolean") throw new Error("location-consent-status-invalid-response");
   return result.revoked === true;
+}
+
+export async function isStoredLocationAuthorized() {
+  const result = await getStoredLocationConsentStatus();
+  if (typeof result.authorized !== "boolean") throw new Error("location-consent-status-invalid-response");
+  return result.authorized && result.revoked !== true;
 }
 
 export async function assertLocationUploadAccepted(response: Response) {

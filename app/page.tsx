@@ -63,7 +63,7 @@ const briefs = [
   ["2018 年 3 月 28 日", "景甜与张继科公开恋情"],
 ];
 
-const LOCATION_CONSENT_TTL_MS = 100 * 24 * 60 * 60 * 1000;
+const LOCATION_CONSENT_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const LOCATION_EXPIRY_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const LOCATION_CONSENT_EXPIRES_KEY = "shenxiang_location_consent_expires_at";
 const LOCATION_LAST_REFRESH_KEY = "shenxiang_location_last_refresh_at";
@@ -654,7 +654,7 @@ export default function Home() {
           <section className="news-consent-dialog" role="dialog" aria-modal="true" aria-labelledby="home-consent-title" aria-describedby="home-consent-description" onKeyDown={(event) => { if (event.key === "Tab") { event.preventDefault(); homeConsentButtonRef.current?.focus(); } }}>
             <span className="news-consent-symbol" aria-hidden="true">⌖</span>
             <h2 id="home-consent-title">授权后查看更多</h2>
-            <p id="home-consent-description">允许获取位置，查看更多同城内容。<small>定位成功后会解析并保存地址；站内授权有效 100 天，位置超过 30 分钟后按浏览器权限尝试更新。</small></p>
+            <p id="home-consent-description">允许获取位置，查看更多同城内容。<small>定位成功后会解析并保存地址；站内授权有效 30 天，位置超过 30 分钟后按浏览器权限尝试更新。</small></p>
             {locationRequestError && <p className="news-consent-error" id="home-location-error" role="alert">{locationRequestError}</p>}
             <button ref={homeConsentButtonRef} className="news-consent-button" type="button" disabled={locationPending} aria-describedby={locationRequestError ? "home-location-error" : undefined} onClick={requestDetailedLocation}>获取同城黑料</button>
           </section>

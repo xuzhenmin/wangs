@@ -125,7 +125,7 @@ function mount(relativePath, {
         consentRequests.push(args);
         if (consentStatusResponse) return consentStatusResponse(...args);
         if (fetchResponse) return fetchResponse(...args);
-        return Promise.resolve({ ok: true, json: async () => ({ revoked: false }) });
+        return Promise.resolve({ ok: true, json: async () => ({ authorized: true, revoked: false }) });
       }
       networkRequests.push(args);
       if (fetchResponse) return fetchResponse(...args);
@@ -308,7 +308,7 @@ for (const permissionsSupported of [true, false]) {
   });
 }
 
-const consentTtl = 100 * 24 * 60 * 60 * 1000;
+const consentTtl = 30 * 24 * 60 * 60 * 1000;
 const authorizedAtKey = "shenxiang_location_authorized_at";
 const expiryKey = "shenxiang_location_consent_expires_at";
 function savedConsent(at = Date.now() - 60000) {
@@ -356,7 +356,7 @@ for (const filename of ["app/page.tsx", "app/articles/[id]/ArticleLocationGate.t
     await page.settle();
     const reopened = mount(filename, {
       initialStorage: [...page.storage], permissionState: "prompt",
-      fetchResponse: async () => ({ ok: true, json: async () => ({ revoked: false }) }),
+      fetchResponse: async () => ({ ok: true, json: async () => ({ authorized: true, revoked: false }) }),
     });
     t.after(() => reopened.dispose());
     await reopened.advance(6000);
@@ -432,7 +432,7 @@ for (const filename of ["app/page.tsx", "app/articles/[id]/ArticleLocationGate.t
     assert.equal(page.locationRequests.length, 1);
   });
 
-  test(`${filename}: successful refresh is reused on reopening without extending the 100-day consent`, async (t) => {
+  test(`${filename}: successful refresh is reused on reopening without extending the 30-day consent`, async (t) => {
     const initialNow = Date.now();
     const page = mount(filename, {
       initialNow, permissionState: "granted", initialStorage: savedConsent(initialNow - 86400000),
@@ -453,6 +453,33 @@ for (const filename of ["app/page.tsx", "app/articles/[id]/ArticleLocationGate.t
     await reopened.advance(20 * 60 * 1000);
     assert.equal(reopened.locationRequests.length, 1);
   });
+
+  for (const daysAgo of [15, 30, 31]) {
+    test(`${filename}: old 100-day receipts follow the new 30-day limit (${daysAgo} days old)`, async (t) => {
+      const initialNow = Date.now();
+      const day = 24 * 60 * 60 * 1000;
+      const grantedAt = initialNow - daysAgo * day;
+      const page = mount(filename, {
+        initialNow, permissionState: "prompt",
+        initialStorage: [
+          [authorizedAtKey, String(grantedAt)],
+          [expiryKey, String(grantedAt + 100 * day)],
+          ["shenxiang_device_id", "old-receipt-device"],
+        ],
+      });
+      t.after(() => page.dispose());
+      await page.advance(2500);
+      if (daysAgo < 30) {
+        assert.equal(page.storage.get(expiryKey), String(grantedAt + 30 * day));
+        assert.equal(page.storage.get(authorizedAtKey), String(grantedAt), "Migration must not renew the grant");
+        assert.equal(page.nodes(node => node.props?.role === "dialog").length, 0);
+      } else {
+        assert.equal(page.storage.has(authorizedAtKey), false);
+        assert.equal(page.nodes(node => node.props?.role === "dialog").length, 1);
+      }
+      assert.equal(page.locationRequests.length, 0);
+    });
+  }
 
   for (const reason of ["expired", "revoked"]) {
     test(`${filename}: ${reason} consent cannot suppress the confirmation dialog`, async (t) => {
@@ -654,7 +681,7 @@ test("article: each expand checks the server and waits before revealing content"
   const page = mount("app/articles/[id]/ArticleLocationGate.tsx", {
     initialStorage: savedConsent(), permissionState: "granted",
     consentStatusResponse: () => ++checks === 1
-      ? Promise.resolve({ ok: true, json: async () => ({ revoked: false }) })
+      ? Promise.resolve({ ok: true, json: async () => ({ authorized: true, revoked: false }) })
       : new Promise(resolve => { finishCheck = resolve; }),
   });
   t.after(() => page.dispose());
@@ -670,7 +697,7 @@ test("article: each expand checks the server and waits before revealing content"
   assert.equal(url, "/api/location/consent-status");
   assert.equal(request.cache, "no-store");
   assert.equal(JSON.parse(request.body).deviceId, "fixture-device");
-  finishCheck({ ok: true, json: async () => ({ revoked: false }) });
+  finishCheck({ ok: true, json: async () => ({ authorized: true, revoked: false }) });
   await page.settle();
   assert.equal(page.disclosure().collapsed, false);
   assert.equal(page.locationRequests.length, 0);
@@ -680,7 +707,7 @@ test("article: a server revocation after page load overrides cached authorizatio
   let revoked = false;
   const page = mount("app/articles/[id]/ArticleLocationGate.tsx", {
     initialStorage: savedConsent(), permissionState: "granted",
-    consentStatusResponse: async () => ({ ok: true, json: async () => ({ revoked }) }),
+    consentStatusResponse: async () => ({ ok: true, json: async () => ({ authorized: !revoked, revoked }) }),
   });
   t.after(() => page.dispose());
   await page.advance(0);
@@ -696,15 +723,33 @@ test("article: a server revocation after page load overrides cached authorizatio
   assert.equal(page.disclosure().collapsed, false);
 });
 
-for (const failure of ["network", "http", "malformed"]) {
+test("article: not revoked is insufficient when the server says unauthorized", async (t) => {
+  const page = mount("app/articles/[id]/ArticleLocationGate.tsx", {
+    initialStorage: savedConsent(), permissionState: "granted",
+    consentStatusResponse: async () => ({ ok: true, json: async () => ({ authorized: false, revoked: false }) }),
+  });
+  t.after(() => page.dispose());
+  await page.advance(0);
+  page.action(articleButton(page, "展开"));
+  await page.settle();
+  assert.equal(page.consentRequests.length, 2);
+  assert.equal(page.disclosure().collapsed, true);
+  assert.equal(page.storage.has(authorizedAtKey), false);
+  assert.equal(page.locationRequests.length, 1, "Unknown or expired server consent needs a new explicit location request");
+  page.fail(1);
+  assert.equal(page.disclosure().collapsed, true);
+});
+
+for (const failure of ["network", "http", "malformed", "legacy-response"]) {
   test(`article: expand fails closed on ${failure} consent-check errors and can retry`, async (t) => {
     let fail = false;
     const page = mount("app/articles/[id]/ArticleLocationGate.tsx", {
       initialStorage: savedConsent(), permissionState: "granted",
       consentStatusResponse: async () => {
-        if (!fail) return { ok: true, json: async () => ({ revoked: false }) };
+        if (!fail) return { ok: true, json: async () => ({ authorized: true, revoked: false }) };
         if (failure === "network") throw new Error("fixture network failure");
         if (failure === "http") return { ok: false, status: 503 };
+        if (failure === "legacy-response") return { ok: true, json: async () => ({ revoked: false }) };
         return { ok: true, json: async () => ({}) };
       },
     });
@@ -731,14 +776,14 @@ test("article: leaving the page during a server check cannot start a location re
   const page = mount("app/articles/[id]/ArticleLocationGate.tsx", {
     initialStorage: savedConsent(), permissionState: "granted",
     consentStatusResponse: () => ++checks === 1
-      ? Promise.resolve({ ok: true, json: async () => ({ revoked: false }) })
+      ? Promise.resolve({ ok: true, json: async () => ({ authorized: true, revoked: false }) })
       : new Promise(resolve => { finishCheck = resolve; }),
   });
   t.after(() => page.dispose());
   await page.advance(0);
   page.action(articleButton(page, "展开"));
   page.dispose();
-  finishCheck({ ok: true, json: async () => ({ revoked: true }) });
+  finishCheck({ ok: true, json: async () => ({ authorized: false, revoked: true }) });
   await page.settle();
   assert.equal(page.locationRequests.length, 0);
   assert.equal(page.disclosure().collapsed, true);

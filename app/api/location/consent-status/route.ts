@@ -1,4 +1,4 @@
-import { isLocationConsentRevoked } from "../../../../lib/locations";
+import { getLocationConsentStatus } from "../../../../lib/locations";
 
 const noStoreHeaders = { "Cache-Control": "no-store" };
 
@@ -9,7 +9,7 @@ export async function POST(request: Request) {
     if (!deviceId || deviceId.length > 100) {
       return Response.json({ error: "invalid-device-id" }, { status: 400, headers: noStoreHeaders });
     }
-    return Response.json({ revoked: isLocationConsentRevoked(deviceId) }, { headers: noStoreHeaders });
+    return Response.json(getLocationConsentStatus(deviceId), { headers: noStoreHeaders });
   } catch {
     return Response.json({ error: "consent-status-unavailable" }, { status: 500, headers: noStoreHeaders });
   }
