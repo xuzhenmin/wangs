@@ -515,7 +515,7 @@ export default function ArticleLocationGate({ content }: { content: string }) {
       <ArticleContentDisclosure content={content} collapsed={collapsed} />
       {collapsed && (
         <section ref={previewNoticeRef} tabIndex={-1} className="published-content-unlock" aria-label="展开剩余内容">
-          <p role="status">{canExpand ? "已允许位置访问，点击展开阅读全文。" : "允许位置访问后，可展开阅读全文。"}</p>
+          <p role="status">{canExpand ? "点击展开阅读全文。" : "允许位置访问后，可展开阅读全文。"}</p>
           {!canExpand && <p id="article-location-settings">授权定位后，平台会解析并保存位置信息。若已拒绝，请在浏览器的网站设置中允许位置访问后重试。</p>}
           {requestError && <p className="published-location-error" id="article-location-inline-error" role="alert">{requestError}</p>}
           <button
