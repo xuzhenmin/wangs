@@ -85,14 +85,14 @@ export function admitArticleView(articleId: string, eventId: string, visitorKey:
       // A short retry window permits recovery when the response for the final
       // slot is lost. A new admin policy immediately invalidates previous grants.
       if (previous.revision !== current.revision || Date.now() - previous.visitedAt > 60_000) return { status: 403 as const };
-      return { status: 200 as const, content: article.content };
+      return { status: 200 as const, content: article.content, recorded: false };
     }
     if (accessFromUsage(current, usage(articleId)).restricted) return { status: 403 as const };
     db.prepare(`INSERT INTO article_view_events (id, article_id, visited_at, visitor_key, access_revision)
       VALUES (?, ?, ?, ?, ?)`).run(eventId, articleId, Date.now(), visitorKey, current.revision);
     db.exec("COMMIT");
     committed = true;
-    return { status: 200 as const, content: article.content };
+    return { status: 200 as const, content: article.content, recorded: true };
   } finally {
     if (!committed) db.exec("ROLLBACK");
   }
