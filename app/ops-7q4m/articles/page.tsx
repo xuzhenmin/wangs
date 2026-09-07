@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ArticleListResult } from "../../../lib/article-management";
 import ArticleVisitors from "./ArticleVisitors";
+import ArticleAccessSettings from "./ArticleAccessSettings";
 
 function formatTime(value: number | null) {
   if (value === null) return "暂无访问";
@@ -27,8 +28,10 @@ export default function ArticleManagementPage() {
   const [revision, setRevision] = useState(0);
   const [loading, setLoading] = useState(true);
   const [visitorArticle, setVisitorArticle] = useState<{ id: string; title: string } | null>(null);
+  const [accessArticle, setAccessArticle] = useState<{ id: string; title: string } | null>(null);
+  const [notice, setNotice] = useState("");
   const requestRef = useRef<AbortController | null>(null);
-  const visitorsUnauthorized = useCallback(() => { setVisitorArticle(null); setData(null); setAuth("required"); }, []);
+  const visitorsUnauthorized = useCallback(() => { setVisitorArticle(null); setAccessArticle(null); setData(null); setAuth("required"); }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -40,7 +43,7 @@ export default function ArticleManagementPage() {
       void (async () => {
         const response = await fetch(`/api/admin/articles/list?${params}`, { cache: "no-store", signal: AbortSignal.any([controller.signal, AbortSignal.timeout(10000)]) });
         if (controller.signal.aborted) return;
-        if (response.status === 401) { setAuth("required"); setData(null); setVisitorArticle(null); return; }
+        if (response.status === 401) { visitorsUnauthorized(); return; }
         if (!response.ok) throw new Error("list-unavailable");
         const result = await response.json() as ArticleListResult;
         if (controller.signal.aborted) return;
@@ -51,7 +54,7 @@ export default function ArticleManagementPage() {
       }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
     }, 0);
     return () => { window.clearTimeout(timeout); controller.abort(); };
-  }, [query, status, sort, page, revision]);
+  }, [query, status, sort, page, revision, visitorsUnauthorized]);
 
   async function login(event: React.FormEvent) {
     event.preventDefault();
@@ -73,7 +76,7 @@ export default function ArticleManagementPage() {
     try {
       const response = await fetch("/api/admin/logout", { method: "POST" });
       if (!response.ok) throw new Error("logout-failed");
-      setData(null); setAuth("required"); setPassword(""); setError(""); setVisitorArticle(null);
+      setData(null); setAuth("required"); setPassword(""); setError(""); setVisitorArticle(null); setAccessArticle(null); setNotice("");
     } catch { setError("退出失败，请重试。"); }
   }
 
@@ -117,6 +120,7 @@ export default function ArticleManagementPage() {
           </div>
         </header>
         {error && <p className="ops-inline-error" role="alert">{error}</p>}
+        {notice && <p className="article-access-notice" role="status">{notice}</p>}
         <div className="metric-grid">
           <div><span>全部文章</span><b>{data?.stats.total ?? 0}</b><small>包含草稿和已发布文章</small></div>
           <div><span>已发布</span><b>{data?.stats.published ?? 0}</b><small>可通过内容链接访问</small></div>
@@ -134,13 +138,15 @@ export default function ArticleManagementPage() {
           </form>
           <div className="records-table-wrap" aria-busy={loading}>
             <table className="records-table article-management-table">
-              <thead><tr><th scope="col">文章标题</th><th scope="col">状态</th><th scope="col">创建时间</th><th scope="col">修改时间</th><th scope="col">访问次数（PV）</th><th scope="col">独立访客（UV）</th><th scope="col">最近访问</th><th scope="col">操作</th></tr></thead>
+              <thead><tr><th scope="col">文章标题</th><th scope="col">状态</th><th scope="col">创建时间</th><th scope="col">修改时间</th><th scope="col">访问次数（PV）</th><th scope="col">独立访客（UV）</th><th scope="col">访问额度</th><th scope="col">最近访问</th><th scope="col">操作</th></tr></thead>
               <tbody>{data?.articles.map(article => <tr key={article.id}>
                 <td className="article-list-title"><b>{article.title}</b><small>{article.id}</small></td>
                 <td><span className={article.status === "published" ? "record-active" : "article-draft-tag"}>{article.status === "published" ? "已发布" : "草稿"}</span></td>
                 <td>{formatTime(article.createdAt)}</td><td>{formatTime(article.updatedAt)}</td>
-                <td className="article-view-count">{article.viewCount.toLocaleString("zh-CN")}</td><td>{article.visitorCount.toLocaleString("zh-CN")}</td><td>{formatTime(article.lastViewedAt)}</td>
-                <td><div className="article-list-actions"><button type="button" aria-label={`查看《${article.title}》访问明细`} onClick={() => setVisitorArticle({ id: article.id, title: article.title })}>访问明细</button><Link href={`/ops-7q4m/editor?id=${encodeURIComponent(article.id)}`}>编辑</Link>{article.status === "published" && <a href={`/articles/${article.id}`} target="_blank" rel="noopener noreferrer">查看文章 ↗</a>}</div></td>
+                <td className="article-view-count">{article.viewCount.toLocaleString("zh-CN")}</td><td>{article.visitorCount.toLocaleString("zh-CN")}</td>
+                <td className="article-access-cell"><span className={article.access.restricted ? "article-access-locked" : "record-active"}>{article.access.restricted ? "访问受限" : "可访问"}</span><small>剩余 UV {article.access.remainingUv ?? "不限"} · PV {article.access.remainingPv ?? "不限"}</small></td>
+                <td>{formatTime(article.lastViewedAt)}</td>
+                <td><div className="article-list-actions"><button type="button" aria-label={`管理《${article.title}》访问额度`} onClick={() => { setNotice(""); setAccessArticle({ id: article.id, title: article.title }); }}>{article.access.restricted ? "解除限制" : "访问量管理"}</button><button type="button" aria-label={`查看《${article.title}》访问明细`} onClick={() => setVisitorArticle({ id: article.id, title: article.title })}>访问明细</button><Link href={`/ops-7q4m/editor?id=${encodeURIComponent(article.id)}`}>编辑</Link>{article.status === "published" && <a href={`/articles/${article.id}`} target="_blank" rel="noopener noreferrer">查看文章 ↗</a>}</div></td>
               </tr>)}</tbody>
             </table>
             {!data?.articles.length && <p className="ops-data-empty">{loading ? "正在加载…" : "暂无符合条件的文章"}</p>}
@@ -150,9 +156,10 @@ export default function ArticleManagementPage() {
             <div><button disabled={loading || (data?.page ?? 1) <= 1} onClick={() => setPage((data?.page ?? 1) - 1)}>上一页</button><button disabled={loading || !data || data.page * data.pageSize >= data.total} onClick={() => setPage((data?.page ?? 1) + 1)}>下一页</button></div>
           </div>
         </section>
-        <p className="article-list-note">PV 按页面打开次数统计，刷新或重新打开会增加；UV 按匿名访客编号去重，不是真实人数。编号 Cookie 保存 30 天，清除 Cookie、无痕或换浏览器可能算作新访客。历史未识别记录只计 PV；启用“不跟踪”隐私信号时不设置访客编号。后台编辑预览、链接预加载不计入，各部署环境分别累计。</p>
+        <p className="article-list-note">默认每篇文章 UV 额度为 10，PV 不限；任一额度用完后，需管理员解除限制。PV 记录获准加载正文的访问，受限请求不计入；UV 按匿名访客编号去重。编号 Cookie 保存 30 天，清除 Cookie、无痕或换浏览器可能算作新访客。历史及隐私设置导致的未识别访问不计入统计 UV，但每次占用 1 份 UV 额度。后台编辑预览、链接预加载不计入，各部署环境分别累计。</p>
       </section>
       {visitorArticle && <ArticleVisitors key={visitorArticle.id} articleId={visitorArticle.id} title={visitorArticle.title} onClose={() => setVisitorArticle(null)} onUnauthorized={visitorsUnauthorized} />}
+      {accessArticle && <ArticleAccessSettings key={accessArticle.id} articleId={accessArticle.id} title={accessArticle.title} onClose={() => setAccessArticle(null)} onUnauthorized={visitorsUnauthorized} onSaved={() => { setAccessArticle(null); setNotice("访问额度已保存，立即生效。"); setRevision(value => value + 1); }} />}
     </main>
   );
 }
