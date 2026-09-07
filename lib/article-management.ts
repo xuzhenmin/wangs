@@ -1,5 +1,6 @@
 import { getDb } from "../db";
 import { accessFromUsage, type ArticleAccess } from "./article-access";
+import type { ArticleVisitorRegion } from "./article-visitor-region";
 
 export type ManagedArticle = {
   id: string; title: string; status: "draft" | "published";
@@ -55,7 +56,7 @@ export function listManagedArticles(params: URLSearchParams): ArticleListResult 
 
 export type ArticleVisitorList = {
   article: { id: string; title: string };
-  visitors: { visitorKey: string; viewCount: number; firstViewedAt: number; lastViewedAt: number }[];
+  visitors: { visitorKey: string; viewCount: number; firstViewedAt: number; lastViewedAt: number; ipRegion: ArticleVisitorRegion | null }[];
   total: number; page: number; pageSize: number; viewCount: number; unidentifiedViews: number;
 };
 
@@ -67,9 +68,19 @@ export function listArticleVisitors(articleId: string, requestedPage: string | n
     COUNT(*) - COUNT(visitor_key) AS unidentifiedViews FROM article_view_events WHERE article_id = ?`).get(articleId) as Pick<ArticleVisitorList, "viewCount" | "total" | "unidentifiedViews">;
   const requested = Number(requestedPage || 1), pageSize = 20;
   const page = Math.min(Math.max(1, Number.isSafeInteger(requested) ? requested : 1), Math.max(1, Math.ceil(stats.total / pageSize)));
-  const visitors = db.prepare(`SELECT visitor_key AS visitorKey, COUNT(*) AS viewCount,
+  const rows = db.prepare(`WITH visitors AS (SELECT visitor_key AS visitorKey, COUNT(*) AS viewCount,
     MIN(visited_at) AS firstViewedAt, MAX(visited_at) AS lastViewedAt
     FROM article_view_events WHERE article_id = ? AND visitor_key IS NOT NULL GROUP BY visitor_key
-    ORDER BY lastViewedAt DESC, visitor_key ASC LIMIT ? OFFSET ?`).all(articleId, pageSize, (page - 1) * pageSize) as ArticleVisitorList["visitors"];
+    ORDER BY lastViewedAt DESC, visitor_key ASC LIMIT ? OFFSET ?)
+    SELECT v.*, r.province, r.city, r.source, r.resolved_at AS resolvedAt FROM visitors v
+    LEFT JOIN article_view_regions r ON r.event_id = (
+      SELECT e.id FROM article_view_events e WHERE e.article_id = ? AND e.visitor_key = v.visitorKey
+      ORDER BY e.visited_at DESC, e.rowid DESC LIMIT 1
+    ) ORDER BY v.lastViewedAt DESC, v.visitorKey ASC`).all(articleId, pageSize, (page - 1) * pageSize, articleId) as (
+      Omit<ArticleVisitorList["visitors"][number], "ipRegion"> & { province: string | null; city: string | null; source: string | null; resolvedAt: number | null }
+    )[];
+  const visitors = rows.map(({ province, city, source, resolvedAt, ...visitor }) => ({ ...visitor,
+    ipRegion: province && source === "amap-ip" && resolvedAt !== null ? { province, city: city || "", source: "amap-ip" as const, resolvedAt } : null,
+  }));
   return { article, visitors, ...stats, page, pageSize };
 }
