@@ -40,15 +40,17 @@ export default function ArticleVisitors({ articleId, title, onClose, onUnauthori
   const changePage = (value: number) => { setLoading(true); setError(""); setData(null); setPage(value); };
   return <dialog ref={dialog} className="article-visitors-dialog" aria-labelledby="article-visitors-title" onCancel={onClose}>
     <header><div><h2 id="article-visitors-title">访问明细</h2><p>{title}</p></div><button type="button" onClick={onClose} aria-label="关闭访问明细">×</button></header>
-    <p className="article-visitors-note">每行代表一个匿名浏览器访客，不代表真实个人。相同编号可跨文章识别；不关联定位、IP 或账号。时间为北京时间。</p>
+    <p className="article-visitors-note">每行代表一个匿名浏览器访客，不代表真实个人。地区根据最近一次访问的 IP 估算，可能与实际位置不同，不代表精确地址；未查询到时显示“未知”。不关联精确定位或账号，时间为北京时间。</p>
     {error && <p role="alert">{error} <button type="button" onClick={() => { setLoading(true); setError(""); setRevision(value => value + 1); }}>重试</button></p>}
     {loading ? <p role="status">正在加载访问明细…</p> : data && <>
       <p>访问次数（PV）：{data.viewCount} · 独立访客（UV）：{data.total}</p>
       <p className="article-visitors-note">未识别访问：{data.unidentifiedViews} 次（历史记录或隐私设置），只计入 PV，不计入 UV。</p>
       <div className="records-table-wrap"><table className="records-table article-visitors-table">
-        <thead><tr><th>匿名访客编号</th><th>访问次数</th><th>首次访问</th><th>最近访问</th></tr></thead>
+        <thead><tr><th>匿名访客编号</th><th>访客地区（IP 估算）</th><th>访问次数</th><th>首次访问</th><th>最近访问</th></tr></thead>
         <tbody>{data.visitors.map(visitor => <tr key={visitor.visitorKey}>
-          <td><code title={visitor.visitorKey}>访客 {visitor.visitorKey.slice(0, 12)}</code></td><td>{visitor.viewCount}</td><td>{time(visitor.firstViewedAt)}</td><td>{time(visitor.lastViewedAt)}</td>
+          <td><code title={visitor.visitorKey}>访客 {visitor.visitorKey.slice(0, 12)}</code></td>
+          <td>{visitor.ipRegion ? <><span>{[...new Set([visitor.ipRegion.province, visitor.ipRegion.city].filter(Boolean))].join(" · ")}</span><small className="article-visitor-region-source">高德 IP 估算</small></> : "未知"}</td>
+          <td>{visitor.viewCount}</td><td>{time(visitor.firstViewedAt)}</td><td>{time(visitor.lastViewedAt)}</td>
         </tr>)}</tbody>
       </table></div>
       {!data.visitors.length && <p>暂无可识别的匿名访客记录。</p>}
