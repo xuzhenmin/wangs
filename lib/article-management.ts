@@ -1,8 +1,10 @@
 import { getDb } from "../db";
+import { accessFromUsage, type ArticleAccess } from "./article-access";
 
 export type ManagedArticle = {
   id: string; title: string; status: "draft" | "published";
   createdAt: number; updatedAt: number; viewCount: number; visitorCount: number; lastViewedAt: number | null;
+  access: ArticleAccess;
 };
 export type ArticleListResult = {
   articles: ManagedArticle[]; total: number; page: number; pageSize: number;
@@ -24,30 +26,31 @@ export function listManagedArticles(params: URLSearchParams): ArticleListResult 
   const page = Math.min(Math.max(1, Number.isSafeInteger(requested) ? requested : 1), Math.max(1, Math.ceil(total / pageSize)));
   const articles = db.prepare(`SELECT a.id, a.title, a.status,
     a.created_at AS createdAt, a.updated_at AS updatedAt,
-    COALESCE(v.views, 0) AS viewCount, COALESCE(v.visitors, 0) AS visitorCount, v.latest AS lastViewedAt
+    COALESCE(v.views, 0) AS viewCount, COALESCE(v.visitors, 0) AS visitorCount, v.latest AS lastViewedAt,
+    COALESCE(v.unidentified, 0) AS unidentified,
+    CASE WHEN p.article_id IS NULL THEN 10 ELSE p.uv_limit END AS uvLimit,
+    p.pv_limit AS pvLimit, COALESCE(p.revision, 0) AS revision
     FROM articles a LEFT JOIN (
-      SELECT article_id, COUNT(*) AS views, COUNT(DISTINCT visitor_key) AS visitors, MAX(visited_at) AS latest
+      SELECT article_id, COUNT(*) AS views, COUNT(DISTINCT visitor_key) AS visitors, MAX(visited_at) AS latest,
+        COUNT(*) - COUNT(visitor_key) AS unidentified
       FROM article_view_events GROUP BY article_id
     ) v ON v.article_id = a.id
+    LEFT JOIN article_access_policies p ON p.article_id = a.id
     WHERE ${filter} ORDER BY ${order} DESC, a.id ASC LIMIT ? OFFSET ?
-  `).all(...values, pageSize, (page - 1) * pageSize) as ManagedArticle[];
+  `).all(...values, pageSize, (page - 1) * pageSize) as (Omit<ManagedArticle, "access"> & {
+    unidentified: number; uvLimit: number | null; pvLimit: number | null; revision: number;
+  })[];
   const stats = db.prepare(`SELECT COUNT(*) AS total,
     COALESCE(SUM(status = 'published'), 0) AS published,
     COALESCE(SUM(status = 'draft'), 0) AS drafts,
     (SELECT COUNT(*) FROM article_view_events v JOIN articles a ON a.id = v.article_id) AS views,
     (SELECT COUNT(DISTINCT v.visitor_key) FROM article_view_events v JOIN articles a ON a.id = v.article_id) AS visitors
     FROM articles`).get() as ArticleListResult["stats"];
-  return { articles, total, page, pageSize, stats };
-}
-
-// A random per-page event prevents duplicate reports from counting twice.
-// The optional key represents a random browser cookie, not a person/device.
-// No account, IP address, fingerprint, or location is collected here.
-export function recordArticleView(articleId: string, eventId: string, visitorKey: string | null = null) {
-  const db = getDb();
-  const result = db.prepare(`INSERT OR IGNORE INTO article_view_events (id, article_id, visited_at, visitor_key)
-    SELECT ?, id, ?, ? FROM articles WHERE id = ? AND status = 'published'`).run(eventId, Date.now(), visitorKey, articleId);
-  return Boolean(result.changes) || Boolean(db.prepare("SELECT 1 FROM articles WHERE id = ? AND status = 'published'").get(articleId));
+  return { articles: articles.map(({ unidentified, uvLimit, pvLimit, revision, ...article }) => ({
+    ...article, access: accessFromUsage({ uvLimit, pvLimit, revision }, {
+      views: article.viewCount, visitors: article.visitorCount, unidentified,
+    }),
+  })), total, page, pageSize, stats };
 }
 
 export type ArticleVisitorList = {
