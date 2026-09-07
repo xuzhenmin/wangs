@@ -1,6 +1,7 @@
 import { admitArticleView } from "../../../../../lib/article-access";
 import { safeArticleContent } from "../../../../../lib/article-content";
 import { articleVisitor } from "../../../../../lib/article-visitor";
+import { scheduleArticleVisitorRegion } from "../../../../../lib/article-visitor-region";
 
 const headers = { "Cache-Control": "no-store" };
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -15,6 +16,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const result = admitArticleView(id, body.eventId, visitor.visitorKey);
     const responseHeaders = { ...headers, ...(visitor.cookie && (result.status === 200 || (result.status === 403 && visitor.visitorKey === null)) ? { "Set-Cookie": visitor.cookie } : {}) };
     if (result.status !== 200) return Response.json({ error: result.status === 404 ? "article-not-found" : result.status === 409 ? "view-event-conflict" : "article-access-restricted" }, { status: result.status, headers: responseHeaders });
+    if (result.recorded) scheduleArticleVisitorRegion(request.headers, body.eventId, visitor.visitorKey);
     return Response.json({ content: safeArticleContent(id, result.content) }, { headers: responseHeaders });
   } catch {
     return Response.json({ error: "article-access-unavailable" }, { status: 503, headers });
