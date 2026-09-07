@@ -1,7 +1,7 @@
 # 匿名访客统计
 
 - 文章列表显示 PV（访问次数）与 UV（匿名浏览器访客数），支持按 UV 排序、查看每篇文章的分页访问明细：稳定匿名编号、次数、首次和最近访问时间。顶部 UV 跨文章去重，不等于每篇文章 UV 相加。
-- 文章页面挂载后使用 `POST /api/articles/{id}/view` 申请访问，请求体只有一次访问的随机 `eventId`。服务端在同一写事务内检查额度、记录获准访问，返回经清洗的正文；受限请求返回 403，不增加 PV/UV。SSR、RSC 预加载不包含正文，也不消耗额度。服务端首次生成独立随机 UUID，通过同域 `shenxiang_article_visitor` Cookie 保存 30 天，不续期；后续请求由浏览器自动携带。无账号、无定位依赖，不读 localStorage 中的定位 deviceId，不采集 IP、User-Agent、指纹、手机号或微信身份。
+- 文章页面挂载后使用 `POST /api/articles/{id}/view` 申请访问，请求体只有一次访问的随机 `eventId`。服务端在同一写事务内检查额度、记录获准访问，返回经清洗的正文；受限请求返回 403，不增加 PV/UV。SSR、RSC 预加载不包含正文，也不消耗额度。服务端首次生成独立随机 UUID，通过同域 `shenxiang_article_visitor` Cookie 保存 30 天，不续期；后续请求由浏览器自动携带。无账号、无定位依赖，不读 localStorage 中的定位 deviceId，不采集 User-Agent、指纹、手机号或微信身份。IP 仅在服务端用于下述省市估算，不参与匿名编号或 UV 计算，不持久保存原始 IP。
 - Cookie 使用 Path=/、HttpOnly、SameSite=Lax，HTTPS（含受信任反向代理传入的 X-Forwarded-Proto=https）加 Secure；不设置 Domain。部署代理应覆盖客户端提供的转发头，不原样信任任意客户端值。属性参考 [MDN Set-Cookie](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Set-Cookie)。
 - 数据库只保存带用途前缀的 SHA-256 派生编号，不保存或向后台输出 Cookie 原值。此编号不是认证凭据；访问明细仅向已登录超级管理员提供，并设置 no-store。
 - 收到 DNT:1 或 Sec-GPC:1 时不关联访客，清除本 Cookie，仅保留不带访客编号的访问次数。
@@ -21,3 +21,35 @@
 - 访问校验失败或网络异常时不显示正文，可以重试；打开受限页面不会触发正文定位流程。正文中的图片和分享封面沿用原有图片托管方式，本功能控制文章正文获取。
 
 验证：构建后运行 `node --test tests/article-visitors.test.mjs tests/article-access-gate.test.mjs tests/article-access.test.mjs`。测试使用隔离数据库，覆盖旧库升级、匿名访客统计、双进程并发额度竞争、UV/PV 上限、管理员释放、权限和输入校验、正文保护、隐私信号、重试与弹窗。`ARTICLE_VISITORS_UI_REVIEW=1 node tests/article-visitors.test.mjs` 可保留临时页面供检查，完成后回车清理测试数据。
+
+## 访客地区（IP 估算）
+
+后台文章“访问明细”增加地区列，展示每个匿名访客在当前文章最近一次访问的省市，标明“高德 IP 估算”。只表示网络出口的大致归属地，不代表街道或住址。最近一次访问未识别、查询未完成或失败时显示“未知”，不拿之前访问的地区冒充当前地区；历史记录不回填。
+
+新的获准访问提交计数事务后，通过 Next `after()` 在响应完成后异步查询高德 `/v3/ip`。只查询已识别匿名访客的访问；重试事件、受限请求、DNT/GPC 请求不查询。单次请求最多等待 2 秒，查询或落库失败不影响正文、PV/UV、访问额度及精确定位授权。单个进程对相同 IP 合并并发查询，结果缓存有效期 10 分钟、失败 1 分钟，缓存最多 512 条且不落盘。
+
+启动自动创建 `article_view_regions`，按访问事件 ID 保存省份、城市、来源 `amap-ip` 与解析时间。原始 IP 只短暂用于服务端查询与内存缓存，不写入数据库、后台响应或应用日志。IP 粗定位与 `consented_locations` 精确定位独立，不新增定位授权，也不变更原有授权判断、隐私信号或内容流程。
+
+接入时设置 `AMAP_WEB_SERVICE_KEY`（复用现有高德 Web 服务 Key）及 `ARTICLE_VISITOR_IP_HEADER`。高德基础 IP API 仅支持国内 IPv4；IPv6、私网、保留地址、海外或未收录 IP 显示未知。不传 IP 会定位到应用服务器，因此程序绝不省略该参数，也不使用服务器 IP 兜底。接口契约见 [高德 IP 定位文档](https://lbs.amap.com/api/webservice/guide/api/ipconfig)。
+
+Next Request 不提供原始 TCP 连接地址，只能依赖部署入口给出的可信请求头，默认不猜测。选择以下与部署一致的方式：
+
+- Nginx 直接接收访客请求：设置 `ARTICLE_VISITOR_IP_HEADER=x-real-ip`，Nginx 必须覆盖 `X-Real-IP` 为 `$remote_addr`。
+- Cloudflare：设置 `ARTICLE_VISITOR_IP_HEADER=cf-connecting-ip`，保证请求必经 Cloudflare，限制源站入口，且中间代理正确保留该头。
+- 使用 `X-Forwarded-For`：设置 `ARTICLE_VISITOR_IP_HEADER=x-forwarded-for` 和 `ARTICLE_VISITOR_PROXY_HOPS`。从右侧选择与可信代理层数对应的地址，默认 1；不盲信客户端可以伪造的最左侧值。各代理必须按既定链路附加真实上游地址。
+
+仅适用于“访客直连 Nginx，无 CDN”的配置示例（合并到现有 `location` 块，不替换其他设置）：
+
+```nginx
+location / {
+    proxy_pass http://127.0.0.1:3217;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    # 保留本站现有的其他代理设置
+}
+```
+
+同时将 Next 端口限制为只接受代理连接（例如仅监听回环地址），防止绕过代理伪造头部。若 Nginx 前还有 CDN，不直接套用此示例，否则会记录 CDN 出口地址。
+
+验证：`node --test tests/article-visitor-region.test.mjs` 覆盖真实 IP 提取、未知地址、隐私信号、查询失败/超时、缓存去重、异步写入及最新访问地区。`tests/article-visitors.test.mjs` 在隔离的 Next 服务中使用模拟高德响应验证 `after()`；测试不会把真实访客 IP 发给外部服务。全量回归运行 `npm test`。
