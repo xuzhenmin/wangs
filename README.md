@@ -66,6 +66,9 @@ OSS 公共 HTTPS 地址。远端文章同步只发送 JSON，不再重复上传�
 - `OSS_ARTICLE_IMAGE_PREFIX`: Object 前缀，默认 `article-images`
 - `OSS_PUBLIC_BASE_URL`: 可选的固定公共域名或 CDN 域名；未设置时使用 `https://<bucket>.oss-accelerate.aliyuncs.com`
 - `LOCATION_DB_PATH`: SQLite 文件路径，默认 `data/wangs.sqlite`
+- `AMAP_WEB_SERVICE_KEY`: 高德 Web 服务 Key，供现有经纬度地址反查与文章访客 IP 省市估算使用
+- `ARTICLE_VISITOR_IP_HEADER`: 明确选择代理提供的真实访客 IP 请求头：`x-real-ip`、`cf-connecting-ip` 或 `x-forwarded-for`；未设置时不查询 IP 地区。代理配置示例见 [访客地区说明](docs/article-visitor-statistics.md#访客地区ip-估算)
+- `ARTICLE_VISITOR_PROXY_HOPS`: 选择 `x-forwarded-for` 时，从链右侧计算的可信代理层数，默认 `1`
 - `NEXT_PUBLIC_SITE_URL`: 网站对外访问地址，用于生成分享卡片和 canonical 的绝对链接，例如 `https://news.osfeng.cn`
 - `LOCAL_SITE_HOST`: 监听地址，默认 `127.0.0.1`；公网服务器可设置为 `0.0.0.0`
 - `LOCAL_SITE_PORT`: 监听端口，默认 `3217`
@@ -254,4 +257,6 @@ HTTPS，正式环境建议在服务前配置 Nginx 和 TLS 证书。
 
 访问统计从功能部署后开始，不补算历史访问。浏览器挂载后申请访问，获准加载正文才计 PV；刷新、重新打开会增加 PV，后台预览、预加载和受限请求不计数。UV 按 30 天匿名 Cookie 去重，不代表真实人数；历史和隐私信号产生的未识别记录不计统计 UV。同一事件重复提交只记一次。
 
-数据保存在当前部署的 SQLite 中，启动自动迁移，不保存 IP 或定位信息。文章同步不合并访问记录或访问设置。完整口径、接口和验证见 [匿名访客统计与访问量管理](docs/article-visitor-statistics.md)。
+访问明细新增“访客地区（IP 估算）”，展示最近一次访问 IP 对应的省市。获准访问后异步查询，失败时显示“未知”，不影响阅读、定位授权或额度；IP 不用于 UV 去重。启用需要配置高德 Key 和可信代理请求头。
+
+数据保存在当前部署的 SQLite 中，启动自动迁移。访问记录仅补充估算省市、来源和查询时间，不持久保存原始 IP 或关联精确定位。文章同步不合并访问记录、地区或访问设置。完整口径、接口和验证见 [匿名访客统计与访问量管理](docs/article-visitor-statistics.md)。
