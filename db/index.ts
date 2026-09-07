@@ -55,6 +55,12 @@ export function getDb() {
     );
     CREATE INDEX IF NOT EXISTS article_view_events_article_idx
       ON article_view_events (article_id, visited_at);
+    CREATE TABLE IF NOT EXISTS article_access_policies (
+      article_id TEXT PRIMARY KEY NOT NULL,
+      uv_limit INTEGER DEFAULT 10,
+      pv_limit INTEGER,
+      revision INTEGER NOT NULL DEFAULT 0
+    );
     CREATE TABLE IF NOT EXISTS image_import_tasks (
       id TEXT PRIMARY KEY NOT NULL,
       article_id TEXT NOT NULL,
@@ -91,6 +97,7 @@ export function getDb() {
   try {
     const columns = database.prepare("PRAGMA table_info(article_view_events)").all();
     if (!columns.some(column => column.name === "visitor_key")) database.exec("ALTER TABLE article_view_events ADD COLUMN visitor_key TEXT");
+    if (!columns.some(column => column.name === "access_revision")) database.exec("ALTER TABLE article_view_events ADD COLUMN access_revision INTEGER NOT NULL DEFAULT -1");
     database.exec("CREATE INDEX IF NOT EXISTS article_view_events_visitor_idx ON article_view_events (article_id, visitor_key, visited_at)");
     database.exec("CREATE INDEX IF NOT EXISTS article_view_events_unique_visitor_idx ON article_view_events (visitor_key)");
     database.exec("COMMIT");
