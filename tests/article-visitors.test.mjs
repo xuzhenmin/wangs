@@ -50,7 +50,7 @@ test("anonymous visitor cookies, PV/UV, protected details and historical schema 
   assert.equal((await report(first, "", crypto.randomUUID(), { "Sec-Fetch-Site": "cross-site" })).status, 403);
   const event = crypto.randomUUID();
   const firstVisit = await report(first, "", event);
-  assert.equal(firstVisit.status, 204);
+  assert.equal(firstVisit.status, 200);
   assert.equal(firstVisit.headers.get("cache-control"), "no-store");
   const cookieHeader = firstVisit.headers.get("set-cookie");
   assert.match(cookieHeader, /^shenxiang_article_visitor=[0-9a-f-]{36};/);
@@ -58,15 +58,15 @@ test("anonymous visitor cookies, PV/UV, protected details and historical schema 
   assert.doesNotMatch(cookieHeader, /Domain=|Secure/);
   const cookieA = cookieHeader.split(";")[0];
   const repeated = await report(first, cookieA, event);
-  assert.equal(repeated.status, 204); assert.equal(repeated.headers.get("set-cookie"), null);
-  assert.equal((await report(first, cookieA)).status, 204);
+  assert.equal(repeated.status, 200); assert.equal(repeated.headers.get("set-cookie"), null);
+  assert.equal((await report(first, cookieA)).status, 200);
   const secondVisit = await report();
-  assert.equal(secondVisit.status, 204);
+  assert.equal(secondVisit.status, 200);
   const cookieB = secondVisit.headers.get("set-cookie").split(";")[0];
   assert.notEqual(cookieA, cookieB);
-  assert.equal((await report(second, cookieA)).status, 204);
+  assert.equal((await report(second, cookieA)).status, 200);
   const privateVisit = await report(first, cookieA, crypto.randomUUID(), { DNT: "1" });
-  assert.equal(privateVisit.status, 204); assert.match(privateVisit.headers.get("set-cookie"), /Max-Age=0/);
+  assert.equal(privateVisit.status, 200); assert.match(privateVisit.headers.get("set-cookie"), /Max-Age=0/);
   assert.equal((await fetch(`${origin}/api/admin/articles/${first}/visitors`)).status, 401);
   assert.equal((await fetch(`${origin}/api/admin/articles/${first}/visitors`, { headers: { Cookie: cookieA } })).status, 401, "Visitor cookie never authenticates an admin");
   const login = await fetch(`${origin}/api/admin/login`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ password: "visitor-fixture-password" }) });
@@ -94,7 +94,12 @@ test("anonymous visitor cookies, PV/UV, protected details and historical schema 
   assert.equal(audit.prepare("SELECT visitor_key FROM article_view_events WHERE id = ?").get(historical).visitor_key, null);
   assert.equal(audit.prepare("SELECT COUNT(*) AS total FROM consented_locations").get().total, 0);
   audit.close();
-  for (let i = 0; i < 21; i++) assert.equal((await report()).status, 204);
+  const unlimited = await fetch(`${origin}/api/admin/articles/${first}/access`, {
+    method: "PUT", headers: { Cookie: admin, "Content-Type": "application/json" },
+    body: JSON.stringify({ remainingUv: null, remainingPv: null, revision: 0 }),
+  });
+  assert.equal(unlimited.status, 200);
+  for (let i = 0; i < 21; i++) assert.equal((await report()).status, 200);
   const page1 = await get(`/api/admin/articles/${first}/visitors?page=-1`);
   const page2 = await get(`/api/admin/articles/${first}/visitors?page=999`);
   assert.equal(page1.total, 23); assert.equal(page1.page, 1); assert.equal(page1.visitors.length, 20);
