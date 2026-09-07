@@ -577,3 +577,33 @@ footer { background:#1b1d1a; color:#d9d7cf; }.footer-inner { min-height:170px; d
   .home-page .story-card { padding:24px 18px; }
   .home-page .content-grid { padding-top:58px; padding-bottom:68px; }
 }
+
+/* Article access allowances */
+.article-access-cell small { display:block; margin-top:8px; color:#76736a; font-size:11px; }
+.article-access-locked { display:inline-block; padding:4px 8px; border-radius:3px; background:#fbe4df; color:#a63325; font-size:12px; }
+.article-access-notice { padding:12px 16px; border:1px solid #bdceba; background:#eef5ea; color:#3e6236; font-size:13px; }
+.article-access-settings { width:min(620px,calc(100% - 24px)); }
+.article-access-summary { margin:16px 0; padding:16px; border:1px solid #d8d6ce; border-radius:6px; background:#fff; font-size:13px; }
+.article-access-summary p:last-child { margin-bottom:0; }
+.article-access-settings fieldset { padding:16px; border:1px solid #d8d6ce; border-radius:6px; }
+.article-access-settings legend { padding:0 6px; font-size:13px; font-weight:bold; }
+.article-access-fields { display:grid; grid-template-columns:1fr 1fr; gap:20px; }
+.article-access-fields label { display:block; margin-bottom:8px; font-size:13px; }
+.article-access-fields input[type=number] { width:100%; padding:10px; border:1px solid #c6c2b7; border-radius:4px; color:#302d29; background:#fff; }
+.article-access-fields input:disabled { opacity:.5; }
+.article-access-fields .article-access-unlimited { display:flex; align-items:center; gap:8px; margin-top:10px; }
+.article-access-warning { padding:10px 14px; color:#8f4e18; background:#fff1dc; font-size:13px; border-radius:4px; }
+.article-access-form-actions { display:flex; justify-content:flex-end; gap:12px; margin-top:24px; }
+.article-access-form-actions button { min-height:42px; padding:10px 18px; border:1px solid #c6c2b7; border-radius:4px; background:#fff; cursor:pointer; }
+.article-access-form-actions button[type=submit] { color:#fff; background:#a63325; border-color:#a63325; }
+.article-access-settings button:disabled { opacity:.5; cursor:default; }
+.article-access-status { color:#b8b5ae; text-align:center; font-size:14px; line-height:1.8; }
+.article-access-status button,.article-access-status a { display:inline-block; padding:10px 16px; margin:12px 4px; border:1px solid #64513a; border-radius:5px; color:#ffb349; background:#211b14; text-decoration:none; cursor:pointer; }
+.article-access-restricted { margin:auto; width:min(380px,calc(100% - 32px)); max-height:calc(100dvh - 32px); overflow:auto; padding:30px 24px; border:1px solid #41403c; border-radius:12px; color:#efede7; background:#171717; box-shadow:0 24px 80px #0008; text-align:left; }
+.article-access-restricted::backdrop { background:#000a; backdrop-filter:blur(3px); }
+.article-access-restricted h2 { margin:12px 0; font-size:26px; font-weight:bold; }
+.article-access-restricted p { margin-bottom:20px; color:#b8b5ae; line-height:1.8; }
+.article-access-restricted>div { display:flex; flex-wrap:wrap; gap:10px; }
+.article-access-restricted button,.article-access-restricted a { margin:0; }
+.article-access-restricted button { color:#111; background:#ff9000; border-color:#ff9000; }
+@media(max-width:480px) { .article-access-fields { grid-template-columns:1fr; gap:14px; }.article-access-settings { padding:18px; }.article-access-form-actions button { flex:1; } }
