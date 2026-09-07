@@ -61,6 +61,13 @@ export function getDb() {
       pv_limit INTEGER,
       revision INTEGER NOT NULL DEFAULT 0
     );
+    CREATE TABLE IF NOT EXISTS article_view_regions (
+      event_id TEXT PRIMARY KEY NOT NULL,
+      province TEXT NOT NULL,
+      city TEXT NOT NULL,
+      source TEXT NOT NULL,
+      resolved_at INTEGER NOT NULL
+    );
     CREATE TABLE IF NOT EXISTS image_import_tasks (
       id TEXT PRIMARY KEY NOT NULL,
       article_id TEXT NOT NULL,
