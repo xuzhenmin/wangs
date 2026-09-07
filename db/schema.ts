@@ -47,6 +47,14 @@ export const articleAccessPolicies = sqliteTable("article_access_policies", {
   revision: integer("revision").notNull().default(0),
 });
 
+export const articleViewRegions = sqliteTable("article_view_regions", {
+  eventId: text("event_id").primaryKey(),
+  province: text("province").notNull(),
+  city: text("city").notNull(),
+  source: text("source").notNull(),
+  resolvedAt: integer("resolved_at").notNull(),
+});
+
 export const imageImportTasks = sqliteTable("image_import_tasks", {
   id: text("id").primaryKey(),
   articleId: text("article_id").notNull(),
