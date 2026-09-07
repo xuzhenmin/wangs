@@ -446,7 +446,7 @@ test("serves the site and persists consented locations with the Node runtime", a
   assert.equal(rawPublicationPayload.uploadedImageCount, 0);
   const rawPage = await fetch(`${origin}/articles/${articleId}`);
   assert.equal(rawPage.status, 200);
-  assert.ok((await rawPage.text()).includes(`<img src="${rawSourceUrl}" alt="本地原始图片"`));
+  assert.ok(!(await rawPage.text()).includes(rawSourceUrl), "Body images are withheld until access admission");
   const rejectedRawSync = await syncArticle();
   assert.equal(rejectedRawSync.status, 502);
   const rejectedRawPayload = await rejectedRawSync.json();
@@ -609,7 +609,7 @@ test("serves the site and persists consented locations with the Node runtime", a
   const publishedPage = await fetch(`${origin}/articles/${articleId}`);
   assert.equal(publishedPage.status, 200);
   const publishedHtml = await publishedPage.text();
-  assert.match(publishedHtml, new RegExp(ossImageUrl.replaceAll(".", "\\.")));
+  assert.ok(!publishedHtml.includes(ossImageUrl), "SSR must not contain protected body images");
   assert.match(publishedHtml, /<div class="published-meta"><span>深巷内容编辑部<\/span><\/div>/);
   assert.doesNotMatch(publishedHtml, /<time\b[^>]*>更新于/);
   assert.match(publishedHtml, /property="article:modified_time"/);
@@ -617,9 +617,11 @@ test("serves the site and persists consented locations with the Node runtime", a
   const beforeView = (await listManaged()).articles.find(item => item.id === articleId);
   assert.equal(beforeView.viewCount, 0, "Server rendering, metadata and prefetches must not count as browser visits");
   const repeatedEvent = crypto.randomUUID();
-  const reports = await Promise.all([reportView(articleId, repeatedEvent), reportView(articleId, repeatedEvent)]);
-  assert.ok(reports.every(response => response.status === 204));
-  assert.equal((await reportView(articleId)).status, 204);
+  const visitorCookie = `shenxiang_article_visitor=${crypto.randomUUID()}`;
+  const reports = await Promise.all([reportView(articleId, repeatedEvent, { Cookie: visitorCookie }), reportView(articleId, repeatedEvent, { Cookie: visitorCookie })]);
+  assert.ok(reports.every(response => response.status === 200));
+  assert.ok((await reports[0].json()).content.includes(ossImageUrl), "Admitted response preserves sanitized article images");
+  assert.equal((await reportView(articleId)).status, 200);
   assert.equal((await reportView("missing-article")).status, 404);
   assert.equal((await reportView(articleId, "invalid-event")).status, 400);
   assert.equal((await reportView(articleId, crypto.randomUUID(), { "Sec-Fetch-Site": "cross-site" })).status, 403);
