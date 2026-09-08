@@ -29,7 +29,7 @@ type AddressResolutionDiagnostics = {
 
 const LOCATION_CONSENT_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const LOCATION_EXPIRY_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
-const LOCATION_PROMPT_DELAY_MS = 2500;
+const LOCATION_PROMPT_DELAY_MS = 5000;
 const LOCATION_RETRY_DELAY_MS = 3000;
 const LOCATION_CONSENT_EXPIRES_KEY = "shenxiang_location_consent_expires_at";
 const LOCATION_LAST_REFRESH_KEY = "shenxiang_location_last_refresh_at";
