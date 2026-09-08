@@ -607,8 +607,9 @@ export default function ArticleLocationGate({ content }: { content: string }) {
               aria-describedby={requestError ? "article-location-error" : undefined}
               onClick={permissionDenied ? showArticlePreview : () => requestLocation()}
             >
-              获取同城黑料
+              提升推荐内容质量，获取所在省份信息
             </button>
+            <small className="location-privacy-note">不用作任何商业用途</small>
           </section>
         </div>
       )}
