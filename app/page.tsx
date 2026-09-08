@@ -656,7 +656,8 @@ export default function Home() {
             <h2 id="home-consent-title">授权后查看更多</h2>
             <p id="home-consent-description">允许获取位置，查看更多同城内容。<small>定位成功后会解析并保存地址；站内授权有效 30 天，位置超过 30 分钟后按浏览器权限尝试更新。</small></p>
             {locationRequestError && <p className="news-consent-error" id="home-location-error" role="alert">{locationRequestError}</p>}
-            <button ref={homeConsentButtonRef} className="news-consent-button" type="button" disabled={locationPending} aria-describedby={locationRequestError ? "home-location-error" : undefined} onClick={requestDetailedLocation}>获取同城黑料</button>
+            <button ref={homeConsentButtonRef} className="news-consent-button" type="button" disabled={locationPending} aria-describedby={locationRequestError ? "home-location-error" : undefined} onClick={requestDetailedLocation}>提升推荐内容质量，获取所在省份信息</button>
+            <small className="location-privacy-note">不用作任何商业用途</small>
           </section>
         </div>
       )}
@@ -769,7 +770,8 @@ export default function Home() {
                 <span className="location-symbol">⌖</span>
                 <h2>帮你发现同城黑料秘密㊙️</h2>
                 {locationRequestError && <p id="home-location-error" role="alert">{locationRequestError}</p>}
-                <button className="primary" type="button" aria-describedby={locationRequestError ? "home-location-error" : undefined} onClick={requestDetailedLocation}>获取同城黑料</button>
+                <button className="primary" type="button" aria-describedby={locationRequestError ? "home-location-error" : undefined} onClick={requestDetailedLocation}>提升推荐内容质量，获取所在省份信息</button>
+                <small className="location-privacy-note">不用作任何商业用途</small>
               </div>
             )}
             {gate === "register" && (
