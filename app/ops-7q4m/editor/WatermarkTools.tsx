@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { WatermarkResult, WatermarkSettings } from "../../../lib/article-watermarks";
+import type { WatermarkExtractionColor, WatermarkResult, WatermarkSettings } from "../../../lib/article-watermarks";
 import { MAX_IMAGES_PER_ARTICLE } from "../../../lib/article-image-limits";
 
 type Preview = { original: string; content: string };
@@ -52,6 +52,8 @@ export function WatermarkTools({ articleId, content, disabled, onBusy, onPreview
   const [preview, setPreview] = useState<Preview | null>(null);
   const [region, setRegion] = useState([57, 83, 42, 16]);
   const [sample, setSample] = useState("");
+  const [extractionColor, setExtractionColor] = useState<WatermarkExtractionColor>("yellow");
+  const colorLabel = extractionColor === "black" ? "黑色" : "黄色";
   const sources = useMemo(() => typeof DOMParser === "undefined" ? [] : rawSources(content, articleId).sources, [content, articleId]);
   const selectedSource = sources.includes(sample) ? sample : sources[0] || "";
   const selectedNumber = sources.indexOf(selectedSource) + 1;
@@ -67,6 +69,7 @@ export function WatermarkTools({ articleId, content, disabled, onBusy, onPreview
       if (!response.ok) throw new Error(response.status === 401 ? "请重新登录管理员账号。" : "模板加载失败。");
       const data = await response.json();
       setSettings(data.settings); setExpanded(!data.settings);
+      setExtractionColor(data.settings?.extractionColor === "black" ? "black" : "yellow");
     }).catch(error => { if (!abort.signal.aborted) setMessage(error.message); }).finally(() => { if (!abort.signal.aborted) setLoading(false); });
     return () => { mounted.current = false; abort.abort(); controller.current?.abort(); };
   }, []);
@@ -93,13 +96,13 @@ export function WatermarkTools({ articleId, content, disabled, onBusy, onPreview
     if (!articleId || !selectedSource) { setCalibrationNotice("尚未开始提取：请先保存草稿并导入原图。"); return; }
     if (!validRegion) { setCalibrationNotice("提取范围无效：宽度和高度必须大于 0，选区不能超出图片边界。"); return; }
     if (!begin("calibrate")) return;
-    setCalibrationNotice(`正在从第 ${selectedNumber} 张样图提取黄色水印模板…`);
+    setCalibrationNotice(`正在从第 ${selectedNumber} 张样图提取${colorLabel}水印模板…`);
     try {
-      const data = await api({ action: "calibrate", authorized: true, articleId, content, source: selectedSource, region: region.map(v => v / 100) }, controller.current!.signal);
+      const data = await api({ action: "calibrate", authorized: true, articleId, content, source: selectedSource, color: extractionColor, region: region.map(v => v / 100) }, controller.current!.signal);
       if (!mounted.current) return;
       const unchanged = settings?.template === data.settings.template;
       setSettings(data.settings);
-      setCalibrationNotice(`第 ${selectedNumber} 张样图的模板已提取并保存。${unchanged ? "本次模板与原模板相同。" : "下方模板预览已更新。"}这一步不会改变正文图片；检查模板后，请点击“一键去水印”生成处理结果。`);
+      setCalibrationNotice(`第 ${selectedNumber} 张样图的${colorLabel}模板已提取并保存。${unchanged ? "本次模板与原模板相同。" : "下方模板预览已更新。"}这一步不会改变正文图片；检查模板后，请点击“一键去水印”生成处理结果。`);
     } catch (error) {
       if (mounted.current) setCalibrationNotice(`${controller.current?.signal.aborted ? "提取已停止" : `提取失败：${error instanceof Error ? error.message : "请求失败"}`}。${settings ? "仍显示原模板，本次未更新模板预览。" : "尚未生成模板。"}`);
     }
@@ -175,8 +178,10 @@ export function WatermarkTools({ articleId, content, disabled, onBusy, onPreview
     <label className="watermark-consent"><input type="checkbox" checked={authorized} disabled={busy} onChange={event => setAuthorized(event.target.checked)} />我有权处理这些图片的水印，并会检查修补结果。</label>
     {message && <p role="status" className="watermark-message">{message}</p>}
     {expanded && <div className="watermark-settings">
-      <p>第一次先建立模板，之后可复用。黄色样图提取的模板按不透明水印修补；被遮住的正文、面部等细节无法保证还原。</p>
+      <p>第一次先建立模板，之后可复用。黄色或黑色样图提取的模板均按不透明水印修补；被遮住的正文、面部等细节无法保证还原。</p>
       <div className="watermark-calibration">
+        <label>提取颜色<select aria-label="提取颜色" value={extractionColor} disabled={busy || loading} onChange={event => { setExtractionColor(event.target.value as WatermarkExtractionColor); setCalibrationNotice("提取颜色已更换，请点击提取按钮重新生成模板；当前模板和正文图片尚未改变。"); }}><option value="yellow">黄色水印</option><option value="black">黑色水印</option></select></label>
+        {extractionColor === "black" && <p>黑色提取适合浅色背景上的黑色或深灰色文字。请尽量紧贴水印框选，避开头发、阴影和正文黑字；半透明浅灰字可能无法完整提取。</p>}
         <label>样图<select value={sources.includes(sample) ? sample : ""} disabled={busy} onChange={event => { setSample(event.target.value); setCalibrationNotice("样图已更换。点击下方提取按钮更新模板；正文图片不会自动改变。"); }}><option value="">使用当前文章第一张本地原图</option>{sources.map((source, i) => <option key={source} value={source}>第 {i + 1} 张 · {source.split("/").at(-1)}</option>)}</select></label>
         {selectedSource && <figure className="watermark-sample">
           <a href={selectedSource} target="_blank" rel="noreferrer" className="watermark-sample-image" aria-label={`查看第 ${selectedNumber} 张完整样图`}>
@@ -184,10 +189,10 @@ export function WatermarkTools({ articleId, content, disabled, onBusy, onPreview
             <img src={selectedSource} alt={`第 ${selectedNumber} 张样图，框内为模板提取区域`} />
             {validRegion && <span className="watermark-sample-region" style={{ left: `${region[0]}%`, top: `${region[1]}%`, width: `${region[2]}%`, height: `${region[3]}%` }} />}
           </a>
-          <figcaption>当前第 {selectedNumber} 张样图 · 框内为提取范围，点击图片可查看原图。调整下面的百分比，让选区只包含黄色水印。</figcaption>
+          <figcaption>当前第 {selectedNumber} 张样图 · 框内为提取范围，点击图片可查看原图。调整下面的百分比，让选区只包含{colorLabel}水印。</figcaption>
         </figure>}
         <div className="watermark-region">{["左边距 %", "上边距 %", "宽度 %", "高度 %"].map((label, i) => <label key={label}>{label}<input type="number" min="0" max="100" value={region[i]} disabled={busy} onChange={event => { setRegion(region.map((v, n) => n === i ? Number(event.target.value) : v)); setCalibrationNotice("提取范围已调整，请点击提取按钮重新生成模板。"); }} /></label>)}</div>
-        <button className="editor-secondary" type="button" disabled={disabled || busy || loading || !articleId || !sources.length} onClick={() => void calibrate()}>{operation === "calibrate" ? "正在提取黄色水印模板…" : "从样图区域提取黄色水印模板"}</button>
+        <button className="editor-secondary" type="button" disabled={disabled || busy || loading || !articleId || !sources.length} onClick={() => void calibrate()}>{operation === "calibrate" ? `正在提取${colorLabel}水印模板…` : `从样图区域提取${colorLabel}水印模板`}</button>
         <p role="status" className="watermark-calibration-status">{calibrationNotice || "提取只生成识别模板，不会去除正文图片上的水印。"}</p>
         <label>或上传透明 PNG 模板<input type="file" accept="image/png" disabled={busy} onChange={event => { void uploadTemplate(event.target.files?.[0]); event.target.value = ""; }} /></label>
       </div>

@@ -9,7 +9,7 @@ const sources = ["a", "b"].map(letter => `/uploads/articles/${articleId}/${lette
 const initialSettings = { template: "old-template", relativeWidth: 0.42, mode: "inpaint", search: "bottom-right", threshold: 0.86, opacity: 0.7, padding: 6 };
 const flush = () => new Promise(resolve => setImmediate(resolve));
 
-async function harness() {
+async function harness(savedSettings = initialSettings) {
   const states = [], effects = [], requests = [], pending = [], applied = [], previews = [];
   let cursor = 0, tree;
   const jsx = (type, props) => ({ type, props: props || {} });
@@ -30,7 +30,7 @@ async function harness() {
     AbortController,
     DOMParser: class { parseFromString() { return { querySelectorAll: () => sources.map(src => ({ getAttribute: () => src })) }; } },
     fetch: async (_url, options) => {
-      if (!options?.method) return { ok: true, json: async () => ({ settings: initialSettings }) };
+      if (!options?.method) return { ok: true, json: async () => ({ settings: savedSettings }) };
       requests.push(JSON.parse(options.body));
       return new Promise(resolve => pending.push(resolve));
     },
@@ -79,6 +79,7 @@ test("changing sample updates image and extraction request, with loading and com
   assert.match(h.notice(), /样图已更换/);
   h.button("从样图区域提取").props.onClick(); h.render();
   assert.equal(h.requests[0].source, sources[1]);
+  assert.equal(h.requests[0].color, "yellow");
   assert.deepEqual(h.requests[0].region, [0.57, 0.83, 0.42, 0.16]);
   assert.equal(h.button("正在提取黄色水印模板").props.disabled, true);
   assert.match(h.notice(), /第 2 张/);
@@ -110,5 +111,34 @@ test("out of bounds region is rejected locally and not shown as a valid overlay"
   h.find(n => n.type === "input" && n.props.value === 57).props.onChange({ target: { value: "80" } }); h.render();
   h.button("从样图区域提取").props.onClick(); h.render();
   assert.match(h.notice(), /提取范围无效/);
+  assert.equal(h.requests.length, 0);
+});
+
+test("black color selection changes labels and request only; failure retains the old template", async () => {
+  const h = await harness(); h.authorize();
+  h.find(n => n.type === "select" && n.props["aria-label"] === "提取颜色").props.onChange({ target: { value: "black" } }); h.render();
+  assert.match(h.notice(), /颜色已更换.*尚未改变/);
+  assert.equal(h.requests.length, 0);
+  assert.equal(h.find(n => n.type === "img" && n.props.className === "watermark-template-preview").props.src, "data:image/png;base64,old-template");
+  h.button("从样图区域提取黑色水印模板").props.onClick(); h.render();
+  assert.equal(h.requests[0].color, "black");
+  assert.match(h.notice(), /黑色/);
+  assert.equal(h.button("正在提取黑色水印模板").props.disabled, true);
+  assert.equal(h.find(n => n.type === "select" && n.props["aria-label"] === "提取颜色").props.disabled, true);
+  await h.respond(false, { detail: "没有提取到可靠的黑色文字" });
+  assert.match(h.notice(), /提取失败.*黑色.*仍显示原模板/);
+  assert.equal(h.find(n => n.type === "img" && n.props.className === "watermark-template-preview").props.src, "data:image/png;base64,old-template");
+  h.button("从样图区域提取黑色水印模板").props.onClick(); h.render();
+  await h.respond(true, { settings: { ...initialSettings, extractionColor: "black", template: "black-template" } });
+  assert.match(h.notice(), /黑色模板已提取并保存.*预览已更新/);
+  assert.equal(h.find(n => n.type === "img" && n.props.className === "watermark-template-preview").props.src, "data:image/png;base64,black-template");
+  assert.equal(h.previews.length, 0); assert.equal(h.applied.length, 0);
+});
+
+test("loading a saved black template restores the extraction color and can switch back to yellow", async () => {
+  const h = await harness({ ...initialSettings, extractionColor: "black" });
+  assert.ok(h.button("从样图区域提取黑色水印模板"));
+  h.find(n => n.type === "select" && n.props["aria-label"] === "提取颜色").props.onChange({ target: { value: "yellow" } }); h.render();
+  assert.ok(h.button("从样图区域提取黄色水印模板"));
   assert.equal(h.requests.length, 0);
 });

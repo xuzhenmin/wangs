@@ -4,10 +4,12 @@ import path from "node:path";
 import { Worker } from "node:worker_threads";
 import { load } from "cheerio";
 import { MAX_IMAGES_PER_ARTICLE } from "./article-image-limits";
-import { createYellowTemplate, validateSettings, validateWatermarkTemplate } from "../scripts/watermark-engine.mjs";
+import { createColorTemplate, validateSettings, validateWatermarkTemplate } from "../scripts/watermark-engine.mjs";
 
+export type WatermarkExtractionColor = "yellow" | "black";
 export type WatermarkSettings = {
   template: string;
+  extractionColor?: WatermarkExtractionColor;
   relativeWidth: number;
   mode: "inpaint" | "inverse";
   search: "bottom-right" | "all";
@@ -87,12 +89,12 @@ export async function saveWatermarkTemplate(settings: WatermarkSettings) {
   return settings;
 }
 
-export async function calibrateYellowTemplate(articleId: string, source: string, region: number[]) {
+export async function calibrateColorTemplate(articleId: string, source: string, region: number[], color: WatermarkExtractionColor = "yellow") {
   if (processing) throw new WatermarkBusyError("已有图片正在处理，请稍后再试。");
   processing = true;
   try {
     const input = await readRawSource(articleId, source);
-    const settings = await createYellowTemplate(input, region) as WatermarkSettings;
+    const settings = await createColorTemplate(input, region, color) as WatermarkSettings;
     return await saveWatermarkTemplate(settings);
   } finally { processing = false; }
 }

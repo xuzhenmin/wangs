@@ -12,8 +12,11 @@ async function decode(input, template = false) {
   return image.rotate().ensureAlpha().raw().toBuffer({ resolveWithObject: true });
 }
 
-// Calibrate a yellow glyph mask from a user-selected region, never the whole image.
-export async function createYellowTemplate(input, region) {
+// Calibrate only the selected color inside the user-selected region. Black
+// extraction is conservative: dark, near-neutral pixels, not arbitrary shadows.
+export async function createColorTemplate(input, region, color = 'yellow') {
+  if (!['yellow', 'black'].includes(color)) throw new Error('提取颜色无效，请选择黄色或黑色。');
+  if (!Array.isArray(region) || region.length !== 4 || !region.every(Number.isFinite)) throw new Error('模板区域不合法。');
   const { data, info } = await decode(input);
   const [rx, ry, rw, rh] = region;
   if (region.length !== 4 || !region.every(Number.isFinite) || rx < 0 || ry < 0 || rw <= 0 || rh <= 0 || rx + rw > 1.001 || ry + rh > 1.001) throw new Error('模板区域不合法。');
@@ -26,17 +29,24 @@ export async function createYellowTemplate(input, region) {
   for (let j = 0; j < height; j++) for (let i = 0; i < width; i++) {
     const p = ((y + j) * info.width + x + i) * 4, q = (j * width + i) * 4;
     const [r, g, b] = data.subarray(p, p + 3);
-    if (r > 160 && g > 90 && g < r * 0.94 && b < g * 0.65 && r - b > 85) {
+    const matches = color === 'yellow'
+      ? r > 160 && g > 90 && g < r * 0.94 && b < g * 0.65 && r - b > 85
+      : Math.max(r, g, b) <= 95 && Math.max(r, g, b) - Math.min(r, g, b) <= 35 && data[p + 3] >= 128;
+    if (matches) {
       rgba[q] = r; rgba[q + 1] = g; rgba[q + 2] = b; rgba[q + 3] = 255; count++;
     }
   }
-  if (count < 80 || count / (width * height) > 0.8) throw new Error('没有提取到可靠的黄色文字，请调整框选区域。');
+  if (count < 80 || count / (width * height) > 0.8) throw new Error(`没有提取到可靠的${color === 'yellow' ? '黄色' : '黑色'}文字，请调整框选区域，避开同色背景。`);
   const template = await sharp(rgba, { raw: { width, height, channels: 4 } }).png().toBuffer();
-  return { template: template.toString('base64'), relativeWidth: width / info.width, mode: 'inpaint', search: 'bottom-right', threshold: 0.86, opacity: 0.7, padding: 6 };
+  return { template: template.toString('base64'), extractionColor: color, relativeWidth: width / info.width, mode: 'inpaint', search: 'bottom-right', threshold: 0.86, opacity: 0.7, padding: 6 };
 }
+
+// Preserve the existing offline calibration entry point.
+export const createYellowTemplate = (input, region) => createColorTemplate(input, region, 'yellow');
 
 export function validateSettings(settings) {
   if (!settings || !['inpaint', 'inverse'].includes(settings.mode) || !['bottom-right', 'all'].includes(settings.search)) throw new Error('水印处理模式无效。');
+  if (settings.extractionColor !== undefined && !['yellow', 'black'].includes(settings.extractionColor)) throw new Error('提取颜色无效，请选择黄色或黑色。');
   for (const [key, min, max] of [['relativeWidth', 0.02, 0.8], ['threshold', 0.75, 0.99], ['opacity', 0.05, 1], ['padding', 0, 12]]) {
     if (!Number.isFinite(settings[key]) || settings[key] < min || settings[key] > max) throw new Error(`水印参数 ${key} 超出允许范围。`);
   }

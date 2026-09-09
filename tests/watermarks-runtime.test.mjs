@@ -53,8 +53,12 @@ test('admin watermark API: access control, preservation, live image serving and 
   manifestDirectory = path.join(process.cwd(), 'data', 'watermark-manifests', article.id);
   await mkdir(rawDirectory, { recursive: true });
   await writeFile(path.join(rawDirectory, filename), f.input);
+  const blackFixture = await fixture(1, [20, 20, 20]);
+  const blackFilename = `${createHash('sha256').update(blackFixture.input).digest('hex').slice(0, 24)}.png`;
+  await writeFile(path.join(rawDirectory, blackFilename), blackFixture.input);
+  const blackSource = `/uploads/articles/${article.id}/${blackFilename}`;
   const source = `/uploads/articles/${article.id}/${filename}`;
-  const content = `<p>这是测试图片，去水印不会自动修改或发布正文。</p><img src="${source}">`;
+  const content = `<p>这是测试图片，去水印不会自动修改或发布正文。</p><img src="${source}"><img src="${blackSource}">`;
   const savedResponse = await fetch(`${origin}/api/admin/articles/${article.id}`, { method: 'PUT', headers, body: JSON.stringify({ ...article, content }) });
   const saved = (await savedResponse.json()).article;
   const settings = { ...f.settings, template: f.template.toString('base64') };
@@ -72,9 +76,35 @@ test('admin watermark API: access control, preservation, live image serving and 
   for (const invalid of ['http://127.0.0.1/secret.png', `/uploads/articles/${crypto.randomUUID()}/${filename}`, `/uploads/articles/${article.id}/../../.env.local`, `/article-images/${article.id}/${filename}`]) {
     assert.equal((await post({ ...body, source: invalid, content: `<img src="${invalid}">` })).status, 422);
   }
-  const calibrated = await post({ ...body, action: 'calibrate', region: [f.left / f.width, f.top / f.height, f.tw / f.width, f.th / f.height] });
+  const calibration = { ...body, action: 'calibrate', region: [f.left / f.width, f.top / f.height, f.tw / f.width, f.th / f.height] };
+  const calibrated = await post(calibration);
   assert.equal(calibrated.status, 200);
-  assert.ok((await calibrated.json()).settings.template);
+  const yellowSettings = (await calibrated.json()).settings;
+  assert.ok(yellowSettings.template);
+  assert.equal(yellowSettings.extractionColor, 'yellow', 'Legacy callers without color still extract yellow');
+  const blackCalibration = await post({ ...calibration, source: blackSource, color: 'black' });
+  const blackResponse = await blackCalibration.json();
+  assert.equal(blackCalibration.status, 200, JSON.stringify(blackResponse));
+  const blackSettings = blackResponse.settings;
+  assert.equal(blackSettings.extractionColor, 'black');
+  assert.notEqual(blackSettings.template, yellowSettings.template);
+  assert.deepEqual((await (await fetch(endpoint, { headers })).json()).settings, blackSettings);
+  for (const color of ['red', null, 1, {}]) {
+    const invalid = await post({ ...calibration, color });
+    assert.equal(invalid.status, 422);
+    assert.match((await invalid.json()).detail, /颜色/);
+  }
+  const wrongColor = await post({ ...calibration, color: 'black' });
+  assert.equal(wrongColor.status, 422);
+  assert.match((await wrongColor.json()).detail, /黑色/);
+  assert.deepEqual((await (await fetch(endpoint, { headers })).json()).settings, blackSettings, 'Failed extraction must preserve the saved black template');
+  const blackProcessed = await post({ ...body, source: blackSource, settings: blackSettings });
+  const blackResult = await blackProcessed.json();
+  assert.equal(blackProcessed.status, 200, JSON.stringify(blackResult));
+  assert.equal(blackResult.status, 'processed');
+  assert.equal(blackResult.platformWatermark.text, '深巷');
+  assert.equal((await fetch(origin + blackResult.localUrl)).status, 200);
+  assert.deepEqual(await readFile(path.join(rawDirectory, blackFilename)), blackFixture.input);
   assert.equal((await post({ action: 'save-template', authorized: true, settings })).status, 200);
   const processed = await post(body);
   assert.equal(processed.status, 200);

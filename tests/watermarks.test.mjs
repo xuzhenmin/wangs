@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import sharp from 'sharp';
-import { createYellowTemplate, removeAndBrandWatermark, removeKnownWatermark, validateSettings } from '../scripts/watermark-engine.mjs';
+import { createColorTemplate, createYellowTemplate, removeAndBrandWatermark, removeKnownWatermark, validateSettings, validateWatermarkTemplate } from '../scripts/watermark-engine.mjs';
 
-export async function fixture(opacity = 1) {
+export async function fixture(opacity = 1, color = [255, 180, 0]) {
   const width = 320, height = 240, tw = 80, th = 32, left = 225, top = 190;
   const template = Buffer.alloc(tw * th * 4), original = Buffer.alloc(width * height * 4);
   for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
@@ -13,7 +13,7 @@ export async function fixture(opacity = 1) {
   for (let y = 3; y < th - 3; y++) for (let x = 3; x < tw - 3; x++) {
     if ((x % 13 < 3 && y < 24) || (y % 11 < 3 && x % 17 < 11) || (x > 58 && y > 20 && x % 4 < 2)) {
       const p = (y * tw + x) * 4;
-      template[p] = 255; template[p + 1] = 180; template[p + 2] = 0; template[p + 3] = 255;
+      template[p] = color[0]; template[p + 1] = color[1]; template[p + 2] = color[2]; template[p + 3] = 255;
     }
   }
   const input = Buffer.from(original);
@@ -83,6 +83,56 @@ test('invalid settings and non-raster templates are rejected', async () => {
   assert.throws(() => validateSettings({ ...f.settings, threshold: NaN }), /参数/);
   await assert.rejects(removeKnownWatermark(f.input, Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="80" height="32"/>'), f.settings), /SVG/);
   await assert.rejects(removeKnownWatermark(f.input, Buffer.from('garbage'), f.settings));
+});
+
+test('default and explicit yellow extraction preserve the legacy glyph mask', async () => {
+  const f = await fixture();
+  const region = [f.left / f.width, f.top / f.height, f.tw / f.width, f.th / f.height];
+  const legacy = await createYellowTemplate(f.input, region);
+  assert.deepEqual(await createColorTemplate(f.input, region), legacy);
+  assert.deepEqual(await createColorTemplate(f.input, region, 'yellow'), legacy);
+  assert.deepEqual(await sharp(Buffer.from(legacy.template, 'base64')).raw().toBuffer(), await sharp(f.template).raw().toBuffer());
+});
+
+for (const [name, color, jpeg] of [['black', [0, 0, 0], false], ['dark gray JPEG', [55, 55, 55], true]]) {
+  test(`${name} extraction creates a transparent mask usable by the repair and branding pipeline`, async () => {
+    const f = await fixture(1, color);
+    const input = jpeg ? await sharp(f.input).jpeg({ quality: 95 }).toBuffer() : f.input;
+    const original = Buffer.from(input);
+    const settings = await createColorTemplate(input, [f.left / f.width, f.top / f.height, f.tw / f.width, f.th / f.height], 'black');
+    assert.equal(settings.extractionColor, 'black');
+    assert.equal(settings.mode, 'inpaint');
+    const template = Buffer.from(settings.template, 'base64');
+    await validateWatermarkTemplate(template);
+    const pixels = await sharp(template).ensureAlpha().raw().toBuffer();
+    assert.ok(pixels.some((v, i) => i % 4 === 3 && v === 0));
+    assert.ok(pixels.some((v, i) => i % 4 === 3 && v === 255));
+    for (let p = 0; p < pixels.length; p += 4) if (pixels[p + 3]) assert.ok(Math.max(pixels[p], pixels[p + 1], pixels[p + 2]) <= 95);
+    const result = await removeAndBrandWatermark(input, template, settings);
+    assert.equal(result.status, 'processed', JSON.stringify(result));
+    assert.ok(Math.abs(result.region.x - f.left) <= 1);
+    assert.ok(Math.abs(result.region.y - f.top) <= 1);
+    assert.equal(result.platformWatermark.text, '深巷');
+    assert.deepEqual(input, original);
+    await assert.rejects(createColorTemplate(input, [f.left / f.width, f.top / f.height, f.tw / f.width, f.th / f.height], 'yellow'), /黄色/);
+  });
+}
+
+test('black extraction rejects empty, fully dark, transparent and colored regions; invalid input fails closed', async () => {
+  const f = await fixture();
+  const region = [f.left / f.width, f.top / f.height, f.tw / f.width, f.th / f.height];
+  await assert.rejects(createColorTemplate(f.input, region, 'black'), /黑色/);
+  for (const background of [{ r: 0, g: 0, b: 0, alpha: 1 }, { r: 0, g: 0, b: 0, alpha: 0 }]) {
+    const input = await sharp({ create: { width: 80, height: 32, channels: 4, background } }).png().toBuffer();
+    await assert.rejects(createColorTemplate(input, [0, 0, 1, 1], 'black'), /黑色/);
+  }
+  const colored = await fixture(1, [0, 15, 90]);
+  await assert.rejects(createColorTemplate(colored.input, region, 'black'), /黑色/);
+  for (const color of ['red', null, 0, {}]) await assert.rejects(createColorTemplate(f.input, region, color), /颜色/);
+  for (const bad of [[NaN, 0, 0.2, 0.2], ['0', 0, 0.2, 0.2], [0.9, 0.9, 0.2, 0.2], [0, 0, 0, 1]]) {
+    await assert.rejects(createColorTemplate(f.input, bad, 'black'), /区域/);
+  }
+  assert.throws(() => validateSettings({ ...f.settings, extractionColor: 'red' }), /颜色/);
 });
 
 test('combined pipeline adds one deterministic translucent 深巷 mark after repair without modifying original', async () => {

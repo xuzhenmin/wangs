@@ -1,6 +1,6 @@
 import { verifyAdminRequest } from "../../../../../lib/admin-auth";
 import { articleExists } from "../../../../../lib/articles";
-import { ARTICLE_ID, calibrateYellowTemplate, getWatermarkTemplate, processArticleWatermark, saveWatermarkTemplate, validateArticleImages, WatermarkBusyError, type WatermarkSettings } from "../../../../../lib/article-watermarks";
+import { ARTICLE_ID, calibrateColorTemplate, getWatermarkTemplate, processArticleWatermark, saveWatermarkTemplate, validateArticleImages, WatermarkBusyError, type WatermarkSettings } from "../../../../../lib/article-watermarks";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -44,7 +44,9 @@ export async function POST(request: Request) {
     validateArticleImages(body.content, source);
     if (body.action === "calibrate") {
       if (!Array.isArray(body.region)) throw new Error("缺少模板区域。");
-      return Response.json({ settings: await calibrateYellowTemplate(articleId, source, body.region) }, { headers });
+      const color = body.color === undefined ? "yellow" : body.color;
+      if (color !== "yellow" && color !== "black") throw new Error("提取颜色无效，请选择黄色或黑色。");
+      return Response.json({ settings: await calibrateColorTemplate(articleId, source, body.region, color) }, { headers });
     }
     if (body.action !== "process") throw new Error("未知处理操作。");
     return Response.json(await processArticleWatermark(articleId, source, body.settings as WatermarkSettings, request.signal), { headers });
