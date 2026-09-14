@@ -15,6 +15,9 @@
     "scrape": "python3 scripts/scrape_page.py",
     "test": "npm run test:storage && npm run build && node --test tests/node-runtime.test.mjs tests/location-denial-hint.test.mjs tests/wechat-sharing.test.mjs tests/article-access-gate.test.mjs tests/article-access.test.mjs tests/article-visitors.test.mjs tests/article-visitor-region.test.mjs tests/back-to-top.test.mjs tests/watermark-tools.test.mjs tests/watermarks-runtime.test.mjs",
     "test:storage": "node --test tests/article-storage-policy.test.mjs",
+    "test:videos": "node --test tests/video-imports.test.mjs tests/video-imports-aes.test.mjs tests/video-imports-queue.test.mjs tests/video-oss.test.mjs tests/article-video-editor.test.mjs",
+    "test:videos:ffmpeg": "node --test tests/video-imports-ffmpeg.test.mjs",
+    "test:videos:runtime": "node --test tests/video-imports-runtime.test.mjs tests/article-videos-runtime.test.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate"
   },

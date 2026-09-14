@@ -1,0 +1,31 @@
+.main { min-width: 0; }
+.main > p { line-height: 1.7; }
+.workflow { color: #f0cb80; font-size: 14px; }
+.card { margin: 22px 0; padding: 24px; border: 1px solid #343947; border-radius: 14px; background: #181c25; color: #eceef3; }
+.card h2 { margin: 0 0 16px; font-size: 20px; }
+.card p, .card li { line-height: 1.7; overflow-wrap: anywhere; }
+.card a { color: #f0cb80; text-decoration: underline; }
+.card code { user-select: all; }
+.form, .pair { display: grid; gap: 14px; margin-top: 16px; }
+.form label, .pair label { display: grid; gap: 8px; }
+.card input:not([type=checkbox]) { width: 100%; min-width: 0; padding: 12px; color: #eee; background: #10131a; border: 1px solid #505968; border-radius: 7px; }
+.form .checkbox { display: flex; align-items: center; gap: 10px; }
+.card button { color: #f0cb80; background: #252b37; border: 1px solid #626878; border-radius: 7px; padding: 10px 16px; cursor: pointer; }
+.card button:disabled { opacity: .45; cursor: not-allowed; }
+.error { color: #ffafae; line-height: 1.7; }
+.jobs { display: grid; gap: 16px; }
+.job { padding: 18px; background: #10141c; border: 1px solid #363e4e; border-radius: 10px; min-width: 0; }
+.row { display: flex; gap: 12px; justify-content: space-between; flex-wrap: wrap; }
+.row h3 { margin: 0; font-size: 17px; overflow-wrap: anywhere; }
+.row strong { color: #f0cb80; }
+.job small { display: block; margin-top: 10px; color: #a5acbb; }
+.job progress { width: 100%; accent-color: #e6c17b; }
+.actions { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; }
+.path { font-size: 12px; color: #a5acbb; word-break: break-all; }
+.preview { width: 100%; max-height: 65vh; margin-top: 16px; background: #000; }
+.publication { margin-top: 18px; padding-top: 18px; border-top: 1px solid #363e4e; }
+.publication h4 { margin: 0; font-size: 15px; }
+.publication p { font-size: 14px; }
+.url { display: grid; gap: 8px; margin: 16px 0; font-size: 14px; }
+.hint { color: #a5acbb; }
+@media (max-width: 640px) { .card { padding: 16px; } .job { padding: 12px; } }

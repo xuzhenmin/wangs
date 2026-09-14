@@ -83,14 +83,14 @@ function replaceImportedImageSources(content: string, images: Array<{ sourceUrl:
   return document.body.innerHTML;
 }
 
-function ArticlePreview({ draft }: { draft: Draft }) {
+function ArticlePreview({ draft, articleVideoBaseUrl }: { draft: Draft; articleVideoBaseUrl: string }) {
   return (
     <article className="document-preview">
       <span className="preview-status">{draft.status === "published" ? "已发布" : "草稿预览"}</span>
       <h1>{draft.title || "未命名文档"}</h1>
       {draft.summary && <p className="preview-summary">{draft.summary}</p>}
       <div className="preview-rule" />
-      <div className="preview-body"><RichTextPreview content={draft.content} /></div>
+      <div className="preview-body"><RichTextPreview content={draft.content} articleVideoBaseUrl={articleVideoBaseUrl} /></div>
     </article>
   );
 }
@@ -102,6 +102,7 @@ export default function ContentEditorPage() {
   const [loginError, setLoginError] = useState("");
   const [articles, setArticles] = useState<Article[]>([]);
   const [articleImageBaseUrl, setArticleImageBaseUrl] = useState("");
+  const [articleVideoBaseUrl, setArticleVideoBaseUrl] = useState("");
   const [activeId, setActiveId] = useState("");
   const [draft, setDraft] = useState<Draft>(emptyDraft);
   const [view, setView] = useState<EditorView>("split");
@@ -139,7 +140,7 @@ export default function ContentEditorPage() {
       return;
     }
     if (!response.ok) throw new Error("article-load-failed");
-    const data = await response.json() as { articles: Article[]; articleImageBaseUrl?: string | null };
+    const data = await response.json() as { articles: Article[]; articleImageBaseUrl?: string | null; articleVideoBaseUrl?: string | null };
     const requestedId = new URLSearchParams(window.location.search).get("id");
     const selected = (requestedId && data.articles.find((article) => article.id === requestedId)) || data.articles[0];
     setArticles(data.articles);
@@ -147,6 +148,7 @@ export default function ContentEditorPage() {
     setActiveId(selected?.id || "");
     setDraft(selected ? articleDraft(selected) : emptyDraft);
     setArticleImageBaseUrl(data.articleImageBaseUrl || "");
+    setArticleVideoBaseUrl(data.articleVideoBaseUrl || "");
     setUnlocked(true);
     setChecking(false);
   }, []);
@@ -303,7 +305,7 @@ export default function ContentEditorPage() {
       setActiveId(savedArticle.id);
       setDraft(articleDraft(savedArticle));
       const savedMessage = status === "published"
-        ? "内容已在本地发布；图片校验和 OSS 上传将在同步远端时执行。请点击左侧文档上的上传图标同步文章。"
+        ? "内容已在本地发布；已插入的视频使用 OSS 地址，不会重复上传。图片处理后的 OSS 上传仍在同步远端时执行，请点击左侧文档上的上传图标同步文章。"
         : activeId ? "草稿修改已保存。" : "草稿已创建。";
       setMessage(savedMessage);
     } catch {
@@ -499,6 +501,7 @@ export default function ContentEditorPage() {
           <Link href="/ops-7q4m"><i>⌖</i>精确位置</Link>
           <Link className="current" href="/ops-7q4m/editor"><i>✎</i>内容管理</Link>
           <Link href="/ops-7q4m/articles"><i>▤</i>文章列表管理</Link>
+          <Link href="/ops-7q4m/videos"><i>▷</i>本地视频保存</Link>
         </div>
         <div className="privacy-badge"><b>内容工作台</b><span>所有保存操作均要求管理员会话</span></div>
         <button className="ops-exit" onClick={logout}>安全退出</button>
@@ -608,11 +611,11 @@ export default function ContentEditorPage() {
                     </div>
                   </div>
                 )}
-                <RichTextEditor content={draft.content} onChange={(content) => setDraft((current) => ({ ...current, content }))} />
+                <RichTextEditor key={activeId || "new"} content={draft.content} articleVideoBaseUrl={articleVideoBaseUrl} onChange={(content) => setDraft((current) => ({ ...current, content }))} />
               </section>
               <section className="editor-pane preview-pane">
-                <div className="pane-head"><b>{watermarkPreview?.original === draft.content ? "去水印＋深巷水印预览（尚未应用）" : "正文内容预览"}</b><small>图片替换结果会实时显示，但不会自动保存</small></div>
-                <ArticlePreview draft={watermarkPreview?.original === draft.content ? { ...draft, content: watermarkPreview.content } : draft} />
+                <div className="pane-head"><b>{watermarkPreview?.original === draft.content ? "去水印＋深巷水印预览（尚未应用）" : "正文内容预览"}</b><small>图片和视频实时预览；修改后请保存或发布</small></div>
+                <ArticlePreview articleVideoBaseUrl={articleVideoBaseUrl} draft={watermarkPreview?.original === draft.content ? { ...draft, content: watermarkPreview.content } : draft} />
               </section>
             </div>
 
@@ -630,7 +633,7 @@ export default function ContentEditorPage() {
             <button className="modal-close" type="button" aria-label="关闭" disabled={syncingRemote} onClick={closeRemoteSync}>×</button>
             <span className="modal-index">REMOTE PUBLISH</span>
             <h2 id="article-sync-title">同步到远端服务器</h2>
-            <p>《{syncArticle.title}》已在本地发布。确认后先检查图片是否完成水印处理，将处理后图片上传阿里云 OSS 并替换正文链接，再向远端同步文章数据。</p>
+            <p>《{syncArticle.title}》已在本地发布。确认后先检查图片是否完成水印处理，将处理后图片上传阿里云 OSS 并替换正文链接，再向远端同步文章数据。视频复用编辑时插入的 OSS 地址，不向远端传输视频文件。</p>
             <form onSubmit={uploadToRemote}>
               <label>
                 远端服务器网址或公网 IP

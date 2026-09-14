@@ -27,13 +27,14 @@ export default function ArticleContentDisclosure({ content, collapsed }: { conte
       // Clipped links must not be reachable with Tab; fully hidden blocks must
       // not remain in the accessibility tree. Sanitized HTML has no prior inert
       // or aria-hidden attributes to preserve.
-      for (const element of body.querySelectorAll<HTMLElement>("p,h1,h2,h3,blockquote,pre,ul,ol,li,img,a,hr")) {
+      for (const element of body.querySelectorAll<HTMLElement>("p,h1,h2,h3,blockquote,pre,ul,ol,li,img,video,a,hr")) {
         const bounds = element.getBoundingClientRect();
         const crossesCutoff = bounds.bottom > cutoff && !["UL", "OL", "BLOCKQUOTE"].includes(element.tagName);
         if (bounds.top >= cutoff || crossesCutoff) {
           element.setAttribute("inert", "");
           element.setAttribute("aria-hidden", "true");
           concealed.add(element);
+          if (element instanceof HTMLVideoElement) element.pause();
         }
       }
     };
@@ -43,10 +44,12 @@ export default function ArticleContentDisclosure({ content, collapsed }: { conte
     observer?.observe(body);
     // Also covers older browsers without ResizeObserver and delayed OSS images.
     body.addEventListener("load", measure, true);
+    body.addEventListener("loadedmetadata", measure, true);
     window.addEventListener("resize", measure);
     return () => {
       observer?.disconnect();
       body.removeEventListener("load", measure, true);
+      body.removeEventListener("loadedmetadata", measure, true);
       window.removeEventListener("resize", measure);
       viewport.style.maxHeight = "";
       restoreAccessibility();

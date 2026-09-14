@@ -1,0 +1,24 @@
+.dialog { margin:auto; width:min(760px,calc(100% - 28px)); max-height:calc(100dvh - 36px); padding:24px; overflow:auto; border:1px solid #c6c2b7; border-radius:10px; background:#f7f6f1; color:#302d29; box-shadow:0 20px 80px #0006; }
+.dialog::backdrop { background:rgb(0 0 0 / 58%); }
+.dialog h2 { margin:0; font-size:22px; font-weight:700; }
+.header { display:flex; justify-content:space-between; align-items:flex-start; gap:20px; }
+.close { flex-shrink:0; width:38px; height:38px; padding:0; border:1px solid #c6c2b7; border-radius:5px; background:#fff; font-size:25px; cursor:pointer; }
+.intro { margin:14px 0; font-size:13px; line-height:1.8; color:#69645a; }
+.dialog a { color:#a63325; text-decoration:underline; text-underline-offset:3px; }
+.dialog button:focus-visible,.dialog a:focus-visible { outline:2px solid #a63325; outline-offset:3px; }
+.error { margin:14px 0; padding:12px; border:1px solid #d99d91; border-radius:5px; background:#fff0eb; color:#8c2616; font-size:13px; line-height:1.7; overflow-wrap:anywhere; }
+.notice { padding:10px 0; font-size:13px; line-height:1.7; }
+.jobs { display:grid; gap:14px; margin-top:18px; }
+.job { padding:17px; border:1px solid #d8d5ca; border-radius:6px; background:#fff; }
+.row { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; }
+.row h3 { margin:0; font-size:15px; line-height:1.6; font-weight:700; overflow-wrap:anywhere; }
+.status { flex-shrink:0; border-radius:4px; background:#eceadd; color:#615a46; padding:4px 7px; font-size:11px; }
+.meta { display:block; margin-top:7px; font-size:12px; line-height:1.7; color:#797366; }
+.actions { display:flex; flex-wrap:wrap; align-items:center; gap:9px; margin-top:13px; }
+.actions button,.retry { padding:8px 11px; min-height:36px; border:1px solid #c7c3b8; border-radius:4px; background:#fff; font-size:12px; cursor:pointer; }
+.actions button:disabled { cursor:not-allowed; opacity:.55; }
+.actions .primary { border-color:#a63325; background:#a63325; color:#fff; }
+.progress { display:block; width:100%; height:9px; margin-top:12px; accent-color:#a63325; }
+.preview { display:block; width:100%; max-height:360px; margin-top:14px; background:#101010; }
+.footer { margin:20px 0 0; color:#797366; font-size:12px; line-height:1.8; }
+@media(max-width:540px) { .dialog { padding:18px; }.row { flex-wrap:wrap; }.job { padding:13px; } }

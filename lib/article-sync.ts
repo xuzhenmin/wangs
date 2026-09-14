@@ -3,6 +3,7 @@ import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
 import { type Article, saveOssContentForSync } from "./articles";
 import { ArticleImagePublicationError, assertArticleUsesOssImages, publishProcessedArticleImagesToOss } from "./oss-article-images";
+import { ArticleVideoValidationError, assertArticleUsesOssVideos } from "./article-videos";
 
 export const MAX_SYNC_REQUEST_BYTES = 512 * 1024;
 const SYNC_TIMEOUT_MS = 3 * 60 * 1000;
@@ -117,6 +118,8 @@ export async function syncArticleToRemote(article: Article, remoteServer: string
     if (article.status !== "published") {
       throw new ArticleSyncValidationError("只有本地已发布文章才能同步到远端。");
     }
+    // Video uploads are explicit editor/library actions, never a publication side effect.
+    assertArticleUsesOssVideos(article.content);
     const endpoint = await remoteSyncEndpoint(remoteServer);
     const publication = await publishProcessedArticleImagesToOss(article.id, article.content);
     const preparedArticle = saveOssContentForSync(article, publication.content);
@@ -150,7 +153,7 @@ export async function syncArticleToRemote(article: Article, remoteServer: string
       uploadedImageCount: publication.uploadedImageCount,
     };
   } catch (error) {
-    const detail = error instanceof ArticleSyncValidationError || error instanceof ArticleImagePublicationError
+    const detail = error instanceof ArticleSyncValidationError || error instanceof ArticleImagePublicationError || error instanceof ArticleVideoValidationError
       ? error.message
       : error instanceof Error && error.name === "TimeoutError"
         ? "远端同步超时。"

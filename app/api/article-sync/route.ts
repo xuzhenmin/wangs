@@ -10,6 +10,7 @@ import {
   upsertSyncedArticle,
 } from "../../../lib/articles";
 import { ArticleImagePublicationError } from "../../../lib/oss-article-images";
+import { ArticleVideoValidationError } from "../../../lib/article-videos";
 
 const noStoreHeaders = { "Cache-Control": "no-store" };
 
@@ -48,6 +49,7 @@ export async function POST(request: Request) {
   } catch (error) {
     if (error instanceof ArticleSyncValidationError
       || error instanceof ArticleImagePublicationError
+      || error instanceof ArticleVideoValidationError
       || error instanceof ExternalImagesPendingError) {
       return json({ error: "invalid-article-sync", detail: error.message }, 422);
     }

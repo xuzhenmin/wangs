@@ -1,5 +1,6 @@
 import { getDb } from "../db";
 import { assertArticleUsesOssImages } from "./oss-article-images";
+import { assertArticleUsesOssVideos } from "./article-videos";
 
 export type ArticleStatus = "draft" | "published";
 
@@ -84,6 +85,7 @@ export function articleExists(id: string) {
 }
 
 export async function createArticle(input: ArticleInput) {
+  if (input.status === "published") assertArticleUsesOssVideos(input.content);
   const id = crypto.randomUUID();
   const article: Article = {
     id,
@@ -108,6 +110,7 @@ export async function createArticle(input: ArticleInput) {
 export async function updateArticle(id: string, input: ArticleInput) {
   const exists = getDb().prepare("SELECT id FROM articles WHERE id = ?").get(id);
   if (!exists) return null;
+  if (input.status === "published") assertArticleUsesOssVideos(input.content);
   const updatedAt = Date.now();
   const result = getDb().prepare(`UPDATE articles SET
     title = ?,
@@ -140,6 +143,7 @@ export async function updateArticle(id: string, input: ArticleInput) {
 // overwrite edits or a change back to draft made while the upload was running.
 export function saveOssContentForSync(snapshot: Article, content: string): Article | null {
   assertArticleUsesOssImages(snapshot.id, content);
+  assertArticleUsesOssVideos(content);
   if (content === snapshot.content) {
     const current = getArticle(snapshot.id);
     return current?.status === "published"
@@ -168,6 +172,7 @@ export function upsertSyncedArticle(
     throw new ExternalImagesPendingError();
   }
   assertArticleUsesOssImages(id, input.content);
+  assertArticleUsesOssVideos(input.content);
   const database = getDb();
   database.prepare(`INSERT INTO articles (
     id, title, summary, content, status, created_at, updated_at

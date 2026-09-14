@@ -106,6 +106,7 @@ export default function ArticleManagementPage() {
           <Link href="/ops-7q4m"><i>⌖</i>精确位置</Link>
           <Link href="/ops-7q4m/editor"><i>✎</i>内容管理</Link>
           <Link className="current" aria-current="page" href="/ops-7q4m/articles"><i>▤</i>文章列表管理</Link>
+          <Link href="/ops-7q4m/videos"><i>▷</i>本地视频保存</Link>
         </nav>
         <div className="privacy-badge"><b>文章与访问统计</b><span>仅超级管理员可查看</span></div>
         <button className="ops-exit" onClick={logout}>安全退出</button>

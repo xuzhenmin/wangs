@@ -1,18 +1,21 @@
 "use client";
 
-import { useEffect } from "react";
-import { EditorContent, useEditor } from "@tiptap/react";
+import { useEffect, useRef, useState } from "react";
+import { EditorContent, useEditor, type Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Image from "@tiptap/extension-image";
 import TextAlign from "@tiptap/extension-text-align";
 import Placeholder from "@tiptap/extension-placeholder";
+import { ArticleVideo, isArticleVideoUrl } from "./ArticleVideo";
+import { VideoPicker } from "./VideoPicker";
 
-function editorExtensions(withPlaceholder = false) {
+function editorExtensions(withPlaceholder = false, articleVideoBaseUrl?: string | null) {
   return [
     StarterKit.configure({
       link: { openOnClick: false, autolink: true, defaultProtocol: "https" },
     }),
     Image.configure({ inline: false, allowBase64: false }),
+    ArticleVideo.configure({ articleVideoBaseUrl: articleVideoBaseUrl || null }),
     TextAlign.configure({ types: ["heading", "paragraph"] }),
     ...(withPlaceholder ? [Placeholder.configure({ placeholder: "在这里输入正文内容……" })] : []),
   ];
@@ -59,15 +62,17 @@ function ToolbarButton({
   return <button type="button" className={active ? "active" : ""} disabled={disabled} onClick={onClick} title={title} aria-label={title}>{label}</button>;
 }
 
-export function RichTextEditor({ content, onChange }: { content: string; onChange: (content: string) => void }) {
+export function RichTextEditor({ content, onChange, articleVideoBaseUrl }: { content: string; onChange: (content: string) => void; articleVideoBaseUrl?: string | null }) {
+  const [showVideos, setShowVideos] = useState(false);
+  const videoSelection = useRef<{ editor: Editor; document: Editor["state"]["doc"]; bookmark: ReturnType<Editor["state"]["selection"]["getBookmark"]> } | null>(null);
   const editor = useEditor({
     immediatelyRender: false,
     shouldRerenderOnTransaction: true,
-    extensions: editorExtensions(true),
+    extensions: editorExtensions(true, articleVideoBaseUrl),
     content: normalizeLegacyContent(content),
     editorProps: { attributes: { class: "rich-text-surface" } },
     onUpdate: ({ editor: currentEditor }) => onChange(currentEditor.getHTML()),
-  });
+  }, [articleVideoBaseUrl]);
 
   useEffect(() => {
     if (!editor) return;
@@ -132,6 +137,10 @@ export function RichTextEditor({ content, onChange }: { content: string; onChang
         <div className="toolbar-group">
           <ToolbarButton label="链接" title="添加或修改链接" active={editor.isActive("link")} onClick={setLink} />
           <ToolbarButton label="图片" title="通过图片地址插入图片" onClick={insertImage} />
+          <ToolbarButton label="视频" title="从视频库上传并插入视频" onClick={() => {
+            videoSelection.current = { editor, document: editor.state.doc, bookmark: editor.state.selection.getBookmark() };
+            setShowVideos(true);
+          }} />
         </div>
         <div className="toolbar-group">
           <ToolbarButton label="↶" title="撤销" disabled={!editor.can().chain().focus().undo().run()} onClick={() => editor.chain().focus().undo().run()} />
@@ -140,18 +149,31 @@ export function RichTextEditor({ content, onChange }: { content: string; onChang
         </div>
       </div>
       <EditorContent editor={editor} />
+      {showVideos && <VideoPicker articleVideoBaseUrl={articleVideoBaseUrl} onClose={() => { setShowVideos(false); videoSelection.current = null; }} onInsert={video => {
+        const selection = videoSelection.current;
+        if (!selection || selection.editor !== editor || editor.isDestroyed || !selection.document.eq(editor.state.doc)) return "正文已发生变化，请关闭视频库，重新选择插入位置后再试。";
+        if (!isArticleVideoUrl(video.src, articleVideoBaseUrl)) return "当前编辑器尚未取得有效的 OSS 配置，请关闭视频库并刷新编辑页面后重试。";
+        let count = 0;
+        editor.state.doc.descendants(node => { if (node.type.name === "articleVideo") count += 1; });
+        if (count >= 20) return "每篇文章最多插入 20 个视频。";
+        const inserted = editor.chain().focus().command(({ tr }) => {
+          tr.setSelection(selection.bookmark.resolve(tr.doc));
+          return true;
+        }).insertContent({ type: "articleVideo", attrs: { src: video.src, title: video.title } }).run();
+        if (!inserted) return "视频插入失败，请重新选择正文中的插入位置。";
+      }} />}
     </div>
   );
 }
 
-export function RichTextPreview({ content }: { content: string }) {
+export function RichTextPreview({ content, articleVideoBaseUrl }: { content: string; articleVideoBaseUrl?: string | null }) {
   const editor = useEditor({
     immediatelyRender: false,
     editable: false,
-    extensions: editorExtensions(),
+    extensions: editorExtensions(false, articleVideoBaseUrl),
     content: normalizeLegacyContent(content),
     editorProps: { attributes: { class: "rich-text-preview-surface" } },
-  });
+  }, [articleVideoBaseUrl]);
 
   useEffect(() => {
     if (!editor) return;
