@@ -1,5 +1,6 @@
 export type VideoPublication = {
   status: 'uploading' | 'uploaded' | 'failed'; progress: number;
+  kind?: 'public' | 'private'; assetId?: string;
   url?: string; objectKey?: string; uploadedAt?: number; error?: string;
 };
 export type VideoJob = {

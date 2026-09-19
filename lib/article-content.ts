@@ -1,6 +1,7 @@
 import sanitizeHtml from "sanitize-html";
 import { isDisplayableArticleImageSource } from "./article-image-urls";
 import { isOssArticleVideoSource } from "./article-video-urls";
+import { isPrivateVideoId, PRIVATE_VIDEO_ATTRIBUTE } from "./private-video-reference";
 
 export function safeArticleContent(articleId: string, content: string) {
   return sanitizeHtml(content, {
@@ -8,7 +9,7 @@ export function safeArticleContent(articleId: string, content: string) {
     allowedAttributes: {
       a: ["href", "target", "rel"],
       img: ["src", "alt", "title"],
-      video: ["src", "title", "controls", "playsinline", "preload"],
+      video: ["src", "title", "controls", "playsinline", "preload", PRIVATE_VIDEO_ATTRIBUTE],
       p: ["style"],
       h1: ["style"],
       h2: ["style"],
@@ -19,11 +20,11 @@ export function safeArticleContent(articleId: string, content: string) {
     allowProtocolRelative: false,
     exclusiveFilter: (frame) => (frame.tag === "img"
       && !isDisplayableArticleImageSource(articleId, frame.attribs.src || ""))
-      || (frame.tag === "video" && !isOssArticleVideoSource(frame.attribs.src || "")),
+      || (frame.tag === "video" && !isPrivateVideoId(frame.attribs[PRIVATE_VIDEO_ATTRIBUTE]) && !isOssArticleVideoSource(frame.attribs.src || "")),
     transformTags: {
       video: (_tagName, attribs) => ({
         tagName: "video",
-        attribs: { src: attribs.src || "", ...(attribs.title ? { title: attribs.title } : {}), controls: "", playsinline: "", preload: "metadata" },
+        attribs: { ...(isPrivateVideoId(attribs[PRIVATE_VIDEO_ATTRIBUTE]) ? { [PRIVATE_VIDEO_ATTRIBUTE]: attribs[PRIVATE_VIDEO_ATTRIBUTE] } : { src: attribs.src || "" }), ...(attribs.title ? { title: attribs.title } : {}), controls: "", playsinline: "", preload: "metadata" },
       }),
       a: (_tagName, attribs) => {
         const external = /^https?:\/\//i.test(attribs.href || "");

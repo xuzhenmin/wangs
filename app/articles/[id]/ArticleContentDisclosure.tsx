@@ -1,6 +1,7 @@
 "use client";
 
 import { useLayoutEffect, useRef } from "react";
+import PrivateVideoEmbeds from "../../PrivateVideoEmbeds";
 
 export default function ArticleContentDisclosure({ content, collapsed }: { content: string; collapsed: boolean }) {
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -27,7 +28,7 @@ export default function ArticleContentDisclosure({ content, collapsed }: { conte
       // Clipped links must not be reachable with Tab; fully hidden blocks must
       // not remain in the accessibility tree. Sanitized HTML has no prior inert
       // or aria-hidden attributes to preserve.
-      for (const element of body.querySelectorAll<HTMLElement>("p,h1,h2,h3,blockquote,pre,ul,ol,li,img,video,a,hr")) {
+      for (const element of body.querySelectorAll<HTMLElement>("p,h1,h2,h3,blockquote,pre,ul,ol,li,img,video,a,hr,[data-private-video-host]")) {
         const bounds = element.getBoundingClientRect();
         const crossesCutoff = bounds.bottom > cutoff && !["UL", "OL", "BLOCKQUOTE"].includes(element.tagName);
         if (bounds.top >= cutoff || crossesCutoff) {
@@ -65,6 +66,7 @@ export default function ArticleContentDisclosure({ content, collapsed }: { conte
       style={collapsed ? { maxHeight: 0 } : undefined}
     >
       <div ref={contentRef} className="published-content" dangerouslySetInnerHTML={{ __html: content }} />
+      <PrivateVideoEmbeds containerRef={contentRef} content={content} />
     </div>
   );
 }

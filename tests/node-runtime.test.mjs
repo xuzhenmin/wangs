@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -117,6 +117,7 @@ test("serves the site and persists consented locations with the Node runtime", a
       OSS_CNAME: "true",
       OSS_ALLOW_INSECURE_ENDPOINT: "true",
       OSS_PUBLIC_BASE_URL: ossPublicBaseUrl,
+      OSS_ARTICLE_IMAGE_PREFIX: "article-images",
       LOCATION_DB_PATH: path.join(runtimeDirectory, "locations.sqlite"),
     },
     stdio: ["ignore", "pipe", "pipe"],
@@ -447,10 +448,12 @@ test("serves the site and persists consented locations with the Node runtime", a
   const rawPage = await fetch(`${origin}/articles/${articleId}`);
   assert.equal(rawPage.status, 200);
   assert.ok(!(await rawPage.text()).includes(rawSourceUrl), "Body images are withheld until access admission");
+  // This fixture deliberately has no raw file yet: source classification now
+  // permits raw imports, but missing local image bytes must still block sync.
   const rejectedRawSync = await syncArticle();
   assert.equal(rejectedRawSync.status, 502);
   const rejectedRawPayload = await rejectedRawSync.json();
-  assert.match(rejectedRawPayload.remoteSync.detail, /原始导入图片/);
+  assert.match(rejectedRawPayload.remoteSync.detail, /找不到或无法读取本地图片/);
   assert.deepEqual(rejectedRawPayload.article, rawPublicationPayload.article);
   assert.deepEqual(await readArticle(), rawPublicationPayload.article);
 
@@ -652,4 +655,170 @@ test("serves the site and persists consented locations with the Node runtime", a
   assert.ok(onlyDrafts.articles.every(item => item.status === "draft"));
   assert.equal((await listManaged("q=列表分页测试&page=9999")).page, 2);
   assert.equal((await listManaged("sort=__proto__&page=NaN")).page, 1);
+
+  // Raw imports are optional-watermark publishing inputs. All uploads below
+  // remain confined to the mock OSS server and this random fixture article.
+  const rawImageDirectory = path.join(projectRoot, "public", "uploads", "articles", articleId);
+  await mkdir(rawImageDirectory, { recursive: true });
+  await mkdir(sourceImageDirectory, { recursive: true });
+  t.after(async () => {
+    await rm(rawImageDirectory, { recursive: true, force: true });
+  });
+  const directRawFilename = "111111111111111111111111.png";
+  const mixedProcessedFilename = "222222222222222222222222.png";
+  const directRawPath = path.join(rawImageDirectory, directRawFilename);
+  const sameNameProcessedPath = path.join(sourceImageDirectory, directRawFilename);
+  const mixedProcessedPath = path.join(sourceImageDirectory, mixedProcessedFilename);
+  const directRawUrl = `/uploads/articles/${articleId}/${directRawFilename}`;
+  const sameNameProcessedUrl = `/article-images/${articleId}/${directRawFilename}`;
+  const mixedProcessedUrl = `/article-images/${articleId}/${mixedProcessedFilename}`;
+  const directRawOssUrl = `${ossPublicBaseUrl}/article-images/${articleId}/${directRawFilename}`;
+  const mixedProcessedOssUrl = `${ossPublicBaseUrl}/article-images/${articleId}/${mixedProcessedFilename}`;
+  // PNG allows trailing bytes; this remains a recognizable synthetic PNG and
+  // gives the collision guard a genuinely different byte sequence to compare.
+  const distinctImageBytes = Buffer.concat([imageBytes, Buffer.from("fixture-variant")]);
+  await writeFile(directRawPath, imageBytes);
+  const rawOnlyContent = `<p>无需水印处理直接同步</p><img src="${directRawUrl}"><img src="${directRawUrl}">`;
+  const beforeRawUploads = ossUploads.length;
+  const directRawPublication = await publishArticle(rawOnlyContent);
+  assert.equal(directRawPublication.status, 200);
+  const directRawPublished = await directRawPublication.json();
+  assert.equal(directRawPublished.article.content, rawOnlyContent);
+  assert.equal(directRawPublished.uploadedImageCount, 0);
+  assert.equal(ossUploads.length, beforeRawUploads, "Local publication alone must not upload images");
+  const directRawSync = await syncArticle();
+  assert.equal(directRawSync.status, 200);
+  const directRawPayload = await directRawSync.json();
+  assert.equal(directRawPayload.remoteSync.status, "synced");
+  assert.equal(directRawPayload.remoteSync.uploadedImageCount, 1, "Repeated raw references upload once");
+  assert.equal(ossUploads.length, beforeRawUploads + 1);
+  assert.equal(ossUploads.at(-1).url, `/article-images/${articleId}/${directRawFilename}`);
+  assert.deepEqual(ossUploads.at(-1).body, imageBytes);
+  assert.equal(directRawPayload.article.content.split(directRawOssUrl).length - 1, 2);
+  assert.ok(!directRawPayload.article.content.includes("/uploads/articles/"));
+  assert.deepEqual(await readArticle(), directRawPayload.article);
+  assert.deepEqual(JSON.parse(remoteSyncRequests.at(-1).body), { article: directRawPayload.article });
+  assert.deepEqual(await readFile(directRawPath), imageBytes, "Uploading must not change the raw input");
+  await assert.rejects(access(sameNameProcessedPath), { code: "ENOENT" }, "Raw inputs must not be copied into the processed directory");
+
+  await writeFile(sameNameProcessedPath, imageBytes);
+  await writeFile(mixedProcessedPath, distinctImageBytes);
+  const mixedContent = `<p>原图、处理图与已上传图片混合</p>${[directRawUrl, directRawUrl, sameNameProcessedUrl, mixedProcessedUrl, ossImageUrl].map(src => `<img src="${src}">`).join("")}`;
+  const mixedPublication = await publishArticle(mixedContent);
+  assert.equal(mixedPublication.status, 200);
+  const beforeMixedUploads = ossUploads.length;
+  const mixedSync = await syncArticle();
+  assert.equal(mixedSync.status, 200);
+  const mixedPayload = await mixedSync.json();
+  assert.equal(mixedPayload.remoteSync.uploadedImageCount, 2, "Same filename and bytes share one object; existing OSS URLs are reused");
+  assert.equal(ossUploads.length, beforeMixedUploads + 2);
+  assert.equal(mixedPayload.article.content.split(directRawOssUrl).length - 1, 3);
+  assert.ok(mixedPayload.article.content.includes(mixedProcessedOssUrl));
+  assert.ok(mixedPayload.article.content.includes(ossImageUrl));
+  assert.ok(!mixedPayload.article.content.includes('src="/'));
+  assert.deepEqual(JSON.parse(remoteSyncRequests.at(-1).body), { article: mixedPayload.article });
+  assert.deepEqual(await readFile(directRawPath), imageBytes);
+  assert.deepEqual(await readFile(sameNameProcessedPath), imageBytes);
+  assert.deepEqual(await readFile(mixedProcessedPath), distinctImageBytes);
+
+  // A raw-image upload failure has the same recoverable behavior as a processed
+  // image failure: no body rewrite, no unpublication, and no remote request.
+  rejectOssUploads = true;
+  const beforeRawFailureUploads = ossUploads.length;
+  const beforeRawFailures = ossFailedUploads.length;
+  const beforeRawFailureRequests = remoteSyncRequests.length;
+  const rawFailurePublication = await publishArticle(rawOnlyContent);
+  assert.equal(rawFailurePublication.status, 200);
+  const rawFailurePublished = await rawFailurePublication.json();
+  const rawFailureSync = await syncArticle();
+  assert.equal(rawFailureSync.status, 502);
+  const rawFailurePayload = await rawFailureSync.json();
+  assert.match(rawFailurePayload.remoteSync.detail, /上传 OSS 失败/);
+  assert.deepEqual(rawFailurePayload.article, rawFailurePublished.article);
+  assert.deepEqual(await readArticle(), rawFailurePublished.article);
+  assert.equal(ossUploads.length, beforeRawFailureUploads);
+  assert.equal(ossFailedUploads.length, beforeRawFailures + 3);
+  assert.equal(remoteSyncRequests.length, beforeRawFailureRequests);
+  assert.deepEqual(await readFile(directRawPath), imageBytes);
+  rejectOssUploads = false;
+
+  const oversizeFilename = "333333333333333333333333.png";
+  const invalidBytesFilename = "444444444444444444444444.png";
+  const mismatchedExtensionFilename = "555555555555555555555555.jpg";
+  const symlinkFilename = "666666666666666666666666.png";
+  await writeFile(path.join(rawImageDirectory, oversizeFilename), Buffer.alloc(8 * 1024 * 1024 + 1));
+  await writeFile(path.join(rawImageDirectory, invalidBytesFilename), "<html>not an image</html>");
+  await writeFile(path.join(rawImageDirectory, mismatchedExtensionFilename), imageBytes);
+  await symlink(directRawPath, path.join(rawImageDirectory, symlinkFilename));
+  const rejectedRawSources = [
+    [`/uploads/articles/${articleId}/${oversizeFilename}`, /超过 8 MB/],
+    [`/uploads/articles/${articleId}/${invalidBytesFilename}`, /内容与格式不符/],
+    [`/uploads/articles/${articleId}/${mismatchedExtensionFilename}`, /内容与格式不符/],
+    [`/uploads/articles/${articleId}/${symlinkFilename}`, /不是普通文件/],
+    [`/uploads/articles/${articleId}/not-a-hash.png`, /文件名无效|不属于当前文章/],
+    [`/uploads/articles/${articleId}/../${directRawFilename}`, /文件名无效|不属于当前文章/],
+    [`/uploads/articles/${articleId}/%2e%2e%2f${directRawFilename}`, /文件名无效|不属于当前文章/],
+    [`/uploads/articles/${articleId}/${directRawFilename}?download=1`, /文件名无效|不属于当前文章/],
+    [`/uploads/articles/${crypto.randomUUID()}/${directRawFilename}`, /不属于当前文章/],
+    ["https://external.example/unimported.png", /外链/],
+    ["blob:https://external.example/unimported", /Blob/],
+  ];
+  for (const [src, reason] of rejectedRawSources) {
+    const beforeUploads = ossUploads.length;
+    const beforeRequests = remoteSyncRequests.length;
+    const publication = await publishArticle(`<p>待修复图片</p><img src="${src}">`);
+    assert.equal(publication.status, 200);
+    const published = await publication.json();
+    const response = await syncArticle();
+    assert.equal(response.status, 502, src);
+    const result = await response.json();
+    assert.match(result.remoteSync.detail, reason, src);
+    assert.deepEqual(result.article, published.article);
+    assert.deepEqual(await readArticle(), published.article);
+    assert.equal(ossUploads.length, beforeUploads, "Invalid inputs must not reach OSS");
+    assert.equal(remoteSyncRequests.length, beforeRequests, "Invalid inputs must not reach the receiver");
+  }
+
+  const tooManyRawImages = await publishArticle(`<p>原图仍受数量限制</p>${`<img src="${directRawUrl}">`.repeat(101)}`);
+  assert.equal(tooManyRawImages.status, 200);
+  const tooManyRawPublished = await tooManyRawImages.json();
+  const beforeTooManyRawUploads = ossUploads.length;
+  const tooManyRawSync = await syncArticle();
+  assert.equal(tooManyRawSync.status, 502);
+  const tooManyRawPayload = await tooManyRawSync.json();
+  assert.match(tooManyRawPayload.remoteSync.detail, /100/);
+  assert.deepEqual(tooManyRawPayload.article, tooManyRawPublished.article);
+  assert.equal(ossUploads.length, beforeTooManyRawUploads);
+
+  // Do not silently overwrite one directory's file with another directory's
+  // different bytes when the two inputs happen to use an identical filename.
+  await writeFile(sameNameProcessedPath, distinctImageBytes);
+  const collisionContent = `<p>同名内容冲突</p><img src="${directRawUrl}"><img src="${sameNameProcessedUrl}">`;
+  const collisionPublication = await publishArticle(collisionContent);
+  assert.equal(collisionPublication.status, 200);
+  const collisionPublished = await collisionPublication.json();
+  const beforeCollisionUploads = ossUploads.length;
+  const beforeCollisionRequests = remoteSyncRequests.length;
+  const collisionSync = await syncArticle();
+  assert.equal(collisionSync.status, 502);
+  const collisionPayload = await collisionSync.json();
+  assert.match(collisionPayload.remoteSync.detail, /同名但内容不同/);
+  assert.equal(ossUploads.length, beforeCollisionUploads + 1, "The second, conflicting object must never overwrite the first upload");
+  assert.deepEqual(ossUploads.at(-1).body, imageBytes);
+  assert.equal(remoteSyncRequests.length, beforeCollisionRequests);
+  assert.deepEqual(collisionPayload.article, collisionPublished.article);
+  assert.deepEqual(await readArticle(), collisionPublished.article);
+  assert.deepEqual(await readFile(directRawPath), imageBytes);
+  assert.deepEqual(await readFile(sameNameProcessedPath), distinctImageBytes);
+
+  // Raw inputs are accepted only by the sending service, never directly by the
+  // receiver: remote JSON must continue to contain permanent OSS references.
+  const rejectedRawReceiver = await fetch(`${origin}/api/article-sync`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${articleSyncSecret}` },
+    body: JSON.stringify({ article: { ...directRawPayload.article, content: rawOnlyContent } }),
+  });
+  assert.equal(rejectedRawReceiver.status, 422);
+  assert.equal((await rejectedRawReceiver.json()).error, "invalid-article-sync");
+  assert.deepEqual(await readArticle(), collisionPublished.article);
 });

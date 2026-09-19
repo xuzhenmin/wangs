@@ -28,4 +28,8 @@
 .publication p { font-size: 14px; }
 .url { display: grid; gap: 8px; margin: 16px 0; font-size: 14px; }
 .hint { color: #a5acbb; }
+.issuedCode { display:grid; gap:14px; padding:18px; margin-top:18px; background:#292718; border:1px solid #8b774c; border-radius:8px; }
+.issuedCode label { display:grid; gap:8px; }
+.codes { display:grid; gap:12px; margin-top:18px; }
+.codes button { margin-top:12px; }
 @media (max-width: 640px) { .card { padding: 16px; } .job { padding: 12px; } }

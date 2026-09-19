@@ -1,4 +1,8 @@
 import { Node } from "@tiptap/react";
+import { createElement } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import PrivateVideoPlayer from "../../PrivateVideoPlayer";
+import { isPrivateVideoId, PRIVATE_VIDEO_ATTRIBUTE } from "../../../lib/private-video-reference";
 
 const videoPath = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\/video\.mp4$/;
 
@@ -24,6 +28,7 @@ export const ArticleVideo = Node.create<{ articleVideoBaseUrl: string | null }>(
   addAttributes() {
     return {
       src: { default: "", parseHTML: element => element.getAttribute("src") || element.querySelector("source[src]")?.getAttribute("src") || "" },
+      assetId: { default: "", parseHTML: element => element.getAttribute(PRIVATE_VIDEO_ATTRIBUTE) || "" },
       title: { default: "", parseHTML: element => element.getAttribute("title") || "" },
     };
   },
@@ -32,7 +37,7 @@ export const ArticleVideo = Node.create<{ articleVideoBaseUrl: string | null }>(
   // The editor and preview both use the safe node view below, not this serializer.
   renderHTML({ node }) {
     return ["video", {
-      src: node.attrs.src,
+      ...(isPrivateVideoId(node.attrs.assetId) ? { [PRIVATE_VIDEO_ATTRIBUTE]: node.attrs.assetId } : { src: node.attrs.src }),
       ...(node.attrs.title ? { title: node.attrs.title } : {}),
       controls: "",
       playsinline: "",
@@ -46,11 +51,19 @@ export const ArticleVideo = Node.create<{ articleVideoBaseUrl: string | null }>(
       dom.className = "rich-article-video";
       dom.contentEditable = "false";
       dom.dataset.type = "article-video";
-      const render = (src: unknown, title: unknown) => {
+      let playerRoot: Root | null = null;
+      const render = (src: unknown, title: unknown, assetId: unknown) => {
+        const oldRoot = playerRoot; playerRoot = null;
+        if (oldRoot) queueMicrotask(() => oldRoot.unmount());
         const previousVideo = dom.querySelector("video");
         if (previousVideo) { previousVideo.pause(); previousVideo.removeAttribute("src"); previousVideo.load(); }
         dom.replaceChildren();
-        if (isArticleVideoUrl(src, base)) {
+        if (isPrivateVideoId(assetId)) {
+          const host = document.createElement("div");
+          dom.append(host);
+          playerRoot = createRoot(host);
+          playerRoot.render(createElement(PrivateVideoPlayer, { assetId, title: typeof title === "string" && title ? title : "私密视频", admin: true }));
+        } else if (isArticleVideoUrl(src, base)) {
           const video = document.createElement("video");
           video.src = src;
           video.controls = true;
@@ -66,19 +79,21 @@ export const ArticleVideo = Node.create<{ articleVideoBaseUrl: string | null }>(
           dom.append(placeholder);
         }
       };
-      render(node.attrs.src, node.attrs.title);
+      render(node.attrs.src, node.attrs.title, node.attrs.assetId);
       return {
         dom,
         update(nextNode) {
           if (nextNode.type !== node.type) return false;
-          if (nextNode.attrs.src !== node.attrs.src || nextNode.attrs.title !== node.attrs.title) render(nextNode.attrs.src, nextNode.attrs.title);
+          if (nextNode.attrs.src !== node.attrs.src || nextNode.attrs.title !== node.attrs.title || nextNode.attrs.assetId !== node.attrs.assetId) render(nextNode.attrs.src, nextNode.attrs.title, nextNode.attrs.assetId);
           node = nextNode;
           return true;
         },
         selectNode() { dom.classList.add("ProseMirror-selectednode"); },
         deselectNode() { dom.classList.remove("ProseMirror-selectednode"); },
-        stopEvent: event => event.target instanceof HTMLVideoElement,
+        stopEvent: event => event.target instanceof HTMLElement && (!!node.attrs.assetId || event.target instanceof HTMLVideoElement),
         destroy() {
+          const oldRoot = playerRoot; playerRoot = null;
+          if (oldRoot) queueMicrotask(() => oldRoot.unmount());
           const video = dom.querySelector("video");
           if (video) { video.pause(); video.removeAttribute("src"); video.load(); }
         },

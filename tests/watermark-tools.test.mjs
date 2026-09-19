@@ -142,3 +142,90 @@ test("loading a saved black template restores the extraction color and can switc
   assert.ok(h.button("从样图区域提取黄色水印模板"));
   assert.equal(h.requests.length, 0);
 });
+
+test("outlined-yellow extraction sends the chosen radius and updates only the template after success", async () => {
+  const h = await harness(); h.authorize();
+  h.find(n => n.type === "select" && n.props["aria-label"] === "提取颜色").props.onChange({ target: { value: "yellow-outline" } }); h.render();
+  const radius = h.find(n => n.type === "input" && n.props["aria-label"] === "描边检测范围（像素）");
+  assert.equal(radius.props.value, 4);
+  assert.equal(radius.props.min, "1"); assert.equal(radius.props.max, "12");
+  radius.props.onChange({ target: { value: "6" } }); h.render();
+  assert.match(h.notice(), /描边检测范围已更换.*重新生成模板.*尚未改变/);
+  assert.equal(h.requests.length, 0);
+  assert.equal(h.find(n => n.type === "img" && n.props.className === "watermark-template-preview").props.src, "data:image/png;base64,old-template");
+  h.button("从样图区域提取黄色＋黑色描边水印模板").props.onClick(); h.render();
+  assert.equal(h.requests[0].color, "yellow-outline"); assert.equal(h.requests[0].outlineRadius, 6);
+  assert.equal(h.find(n => n.type === "input" && n.props["aria-label"] === "描边检测范围（像素）").props.disabled, true);
+  await h.respond(true, { settings: { ...initialSettings, template: "outlined-template", extractionColor: "yellow-outline", outlineRadius: 6, search: "bottom", padding: 1 } });
+  assert.match(h.notice(), /黄色＋黑色描边模板已提取并保存.*预览已更新/);
+  assert.equal(h.find(n => n.type === "img" && n.props.className === "watermark-template-preview").props.src, "data:image/png;base64,outlined-template");
+  assert.equal(h.find(n => n.type === "select" && n.props["aria-label"] === "搜索区域").props.value, "bottom");
+  assert.equal(h.find(n => n.type === "select" && n.props["aria-label"] === "处理方式").props.value, "inpaint");
+  assert.equal(h.find(n => n.type === "option" && n.props.value === "inverse").props.disabled, true);
+  assert.equal(h.previews.length, 0); assert.equal(h.applied.length, 0);
+});
+
+test("saved outlined template restores color/radius and keeps its mode restriction when extraction choice changes", async () => {
+  const h = await harness({ ...initialSettings, extractionColor: "yellow-outline", outlineRadius: 7, search: "bottom", padding: 1 });
+  assert.ok(h.button("从样图区域提取黄色＋黑色描边水印模板"));
+  assert.equal(h.find(n => n.type === "input" && n.props["aria-label"] === "描边检测范围（像素）").props.value, 7);
+  assert.equal(h.find(n => n.type === "select" && n.props["aria-label"] === "搜索区域").props.value, "bottom");
+  assert.equal(h.find(n => n.type === "option" && n.props.value === "inverse").props.disabled, true);
+  h.find(n => n.type === "select" && n.props["aria-label"] === "提取颜色").props.onChange({ target: { value: "yellow" } }); h.render();
+  assert.ok(h.button("从样图区域提取黄色水印模板"));
+  assert.equal(h.find(n => n.type === "option" && n.props.value === "inverse").props.disabled, true, "pending extraction color cannot change the existing template mode");
+  assert.equal(h.requests.length, 0);
+});
+
+test("failed outlined extraction keeps prior preview and settings without applying article changes", async () => {
+  const h = await harness(); h.authorize();
+  h.find(n => n.type === "select" && n.props["aria-label"] === "提取颜色").props.onChange({ target: { value: "yellow-outline" } }); h.render();
+  h.button("从样图区域提取黄色＋黑色描边水印模板").props.onClick(); h.render();
+  await h.respond(false, { detail: "选区中的描边占比过大，请缩小选区" });
+  assert.match(h.notice(), /提取失败.*描边占比过大.*仍显示原模板/);
+  assert.equal(h.find(n => n.type === "img" && n.props.className === "watermark-template-preview").props.src, "data:image/png;base64,old-template");
+  assert.equal(h.find(n => n.type === "select" && n.props["aria-label"] === "搜索区域").props.value, "bottom-right");
+  assert.equal(h.find(n => n.type === "option" && n.props.value === "inverse").props.disabled, false);
+  assert.equal(h.previews.length, 0); assert.equal(h.applied.length, 0);
+});
+
+test("invalid outline radius is rejected before a request without replacing the existing template", async () => {
+  const h = await harness(); h.authorize();
+  h.find(n => n.type === "select" && n.props["aria-label"] === "提取颜色").props.onChange({ target: { value: "yellow-outline" } }); h.render();
+  for (const value of ["0", "13", "1.5"]) {
+    h.find(n => n.type === "input" && n.props["aria-label"] === "描边检测范围（像素）").props.onChange({ target: { value } }); h.render();
+    h.button("从样图区域提取黄色＋黑色描边水印模板").props.onClick(); h.render();
+    assert.match(h.notice(), /1 至 12 的整数像素/);
+  }
+  assert.equal(h.requests.length, 0);
+  assert.equal(h.find(n => n.type === "img" && n.props.className === "watermark-template-preview").props.src, "data:image/png;base64,old-template");
+});
+
+test("bottom-area search can be saved for a pre-existing template without changing its extraction type", async () => {
+  const h = await harness(); h.authorize();
+  h.find(n => n.type === "select" && n.props["aria-label"] === "搜索区域").props.onChange({ target: { value: "bottom" } }); h.render();
+  h.button("保存模板与参数").props.onClick(); h.render();
+  assert.equal(h.requests[0].action, "save-template");
+  assert.equal(h.requests[0].settings.search, "bottom");
+  assert.equal(h.requests[0].settings.template, "old-template");
+  assert.equal(h.requests[0].settings.extractionColor, undefined);
+  assert.equal(h.requests[0].settings.outlineRadius, undefined);
+  await h.respond(true, { settings: { ...initialSettings, search: "bottom" } });
+  assert.equal(h.previews.length, 0); assert.equal(h.applied.length, 0);
+});
+
+for (const allowLossyOutput of [true, false]) {
+  test(`oversized-result compression defaults on and sends the explicit choice ${allowLossyOutput}`, async () => {
+    const h = await harness(); h.authorize();
+    const checkbox = h.find(n => n.type === "input" && n.props["aria-label"] === "超大结果压缩");
+    assert.equal(checkbox.props.checked, true);
+    if (!allowLossyOutput) { checkbox.props.onChange({ target: { checked: false } }); h.render(); }
+    h.button("一键去水印并加深巷水印").props.onClick(); h.render();
+    for (let i = 0; i < sources.length; i++) {
+      assert.equal(h.requests[i].action, "process");
+      assert.equal(h.requests[i].settings.allowLossyOutput, allowLossyOutput);
+      await h.respond(false, { detail: "本测试不生成真实图片" });
+    }
+    assert.equal(h.applied.length, 0);
+  });
+}

@@ -44,6 +44,7 @@ export function WatermarkTools({ articleId, content, disabled, onBusy, onPreview
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState(false);
   const [authorized, setAuthorized] = useState(false);
+  const [allowLossyOutput, setAllowLossyOutput] = useState(true);
   const [busy, setBusy] = useState(false);
   const [operation, setOperation] = useState<"process" | "calibrate" | "save-template" | null>(null);
   const [calibrationNotice, setCalibrationNotice] = useState("");
@@ -53,7 +54,8 @@ export function WatermarkTools({ articleId, content, disabled, onBusy, onPreview
   const [region, setRegion] = useState([57, 83, 42, 16]);
   const [sample, setSample] = useState("");
   const [extractionColor, setExtractionColor] = useState<WatermarkExtractionColor>("yellow");
-  const colorLabel = extractionColor === "black" ? "黑色" : "黄色";
+  const [outlineRadius, setOutlineRadius] = useState(4);
+  const colorLabel = extractionColor === "black" ? "黑色" : extractionColor === "yellow-outline" ? "黄色＋黑色描边" : "黄色";
   const sources = useMemo(() => typeof DOMParser === "undefined" ? [] : rawSources(content, articleId).sources, [content, articleId]);
   const selectedSource = sources.includes(sample) ? sample : sources[0] || "";
   const selectedNumber = sources.indexOf(selectedSource) + 1;
@@ -69,7 +71,8 @@ export function WatermarkTools({ articleId, content, disabled, onBusy, onPreview
       if (!response.ok) throw new Error(response.status === 401 ? "请重新登录管理员账号。" : "模板加载失败。");
       const data = await response.json();
       setSettings(data.settings); setExpanded(!data.settings);
-      setExtractionColor(data.settings?.extractionColor === "black" ? "black" : "yellow");
+      setExtractionColor(data.settings?.extractionColor === "black" || data.settings?.extractionColor === "yellow-outline" ? data.settings.extractionColor : "yellow");
+      setOutlineRadius(data.settings?.outlineRadius ?? 4);
     }).catch(error => { if (!abort.signal.aborted) setMessage(error.message); }).finally(() => { if (!abort.signal.aborted) setLoading(false); });
     return () => { mounted.current = false; abort.abort(); controller.current?.abort(); };
   }, []);
@@ -95,10 +98,11 @@ export function WatermarkTools({ articleId, content, disabled, onBusy, onPreview
     if (!authorized) { setCalibrationNotice("尚未开始提取：请先勾选上方的图片处理授权确认。"); return; }
     if (!articleId || !selectedSource) { setCalibrationNotice("尚未开始提取：请先保存草稿并导入原图。"); return; }
     if (!validRegion) { setCalibrationNotice("提取范围无效：宽度和高度必须大于 0，选区不能超出图片边界。"); return; }
+    if (extractionColor === "yellow-outline" && (!Number.isInteger(outlineRadius) || outlineRadius < 1 || outlineRadius > 12)) { setCalibrationNotice("描边检测范围必须是 1 至 12 的整数像素，请调整后重新提取。"); return; }
     if (!begin("calibrate")) return;
     setCalibrationNotice(`正在从第 ${selectedNumber} 张样图提取${colorLabel}水印模板…`);
     try {
-      const data = await api({ action: "calibrate", authorized: true, articleId, content, source: selectedSource, color: extractionColor, region: region.map(v => v / 100) }, controller.current!.signal);
+      const data = await api({ action: "calibrate", authorized: true, articleId, content, source: selectedSource, color: extractionColor, ...(extractionColor === "yellow-outline" ? { outlineRadius } : {}), region: region.map(v => v / 100) }, controller.current!.signal);
       if (!mounted.current) return;
       const unchanged = settings?.template === data.settings.template;
       setSettings(data.settings);
@@ -116,6 +120,7 @@ export function WatermarkTools({ articleId, content, disabled, onBusy, onPreview
     reader.onload = () => {
       if (!mounted.current) return;
       setSettings({ ...defaults, template: String(reader.result).split(",")[1] });
+      setExtractionColor("yellow"); setOutlineRadius(4);
       setCalibrationNotice("");
       setMessage("已载入模板，请调整参数并保存模板。");
     };
@@ -139,7 +144,7 @@ export function WatermarkTools({ articleId, content, disabled, onBusy, onPreview
         const source = current.sources[i];
         setMessage(`正在处理 ${i + 1} / ${current.sources.length}，请勿关闭页面…`);
         try {
-          const result = await api({ action: "process", authorized: true, articleId, content: original, source, settings }, signal) as WatermarkResult;
+          const result = await api({ action: "process", authorized: true, articleId, content: original, source, settings: { ...settings, allowLossyOutput } }, signal) as WatermarkResult;
           if (result.status === "processed" && result.localUrl) {
             const check = await fetch(result.localUrl, { signal });
             if (!check.ok || !check.headers.get("content-type")?.startsWith("image/")) throw new Error("结果图片无法访问，未加入预览。");
@@ -176,12 +181,18 @@ export function WatermarkTools({ articleId, content, disabled, onBusy, onPreview
       <small>成功去除旧水印后，添加右下角“深巷”水印（透明度 30%）。只处理本地原图，不自动上传或发布。</small>
     </div>
     <label className="watermark-consent"><input type="checkbox" checked={authorized} disabled={busy} onChange={event => setAuthorized(event.target.checked)} />我有权处理这些图片的水印，并会检查修补结果。</label>
+    <label className="watermark-consent"><input type="checkbox" aria-label="超大结果压缩" checked={allowLossyOutput} disabled={busy} onChange={event => setAllowLossyOutput(event.target.checked)} />超大结果压缩：PNG 超过 8 MB 时允许转为高质量 JPEG／WebP，不缩小尺寸；有损压缩可能影响细节，请检查预览。</label>
     {message && <p role="status" className="watermark-message">{message}</p>}
     {expanded && <div className="watermark-settings">
-      <p>第一次先建立模板，之后可复用。黄色或黑色样图提取的模板均按不透明水印修补；被遮住的正文、面部等细节无法保证还原。</p>
+      <p>第一次先建立模板，之后可复用。样图提取的黄色、黑色和黄色＋黑色描边模板均按不透明水印修补；被遮住的正文、面部等细节无法保证还原。</p>
       <div className="watermark-calibration">
-        <label>提取颜色<select aria-label="提取颜色" value={extractionColor} disabled={busy || loading} onChange={event => { setExtractionColor(event.target.value as WatermarkExtractionColor); setCalibrationNotice("提取颜色已更换，请点击提取按钮重新生成模板；当前模板和正文图片尚未改变。"); }}><option value="yellow">黄色水印</option><option value="black">黑色水印</option></select></label>
+        <label>提取颜色<select aria-label="提取颜色" value={extractionColor} disabled={busy || loading} onChange={event => { setExtractionColor(event.target.value as WatermarkExtractionColor); setCalibrationNotice("提取颜色已更换，请点击提取按钮重新生成模板；当前模板和正文图片尚未改变。"); }}><option value="yellow">黄色水印</option><option value="black">黑色水印</option><option value="yellow-outline">黄色＋黑色描边</option></select></label>
         {extractionColor === "black" && <p>黑色提取适合浅色背景上的黑色或深灰色文字。请尽量紧贴水印框选，避开头发、阴影和正文黑字；半透明浅灰字可能无法完整提取。</p>}
+        {extractionColor === "yellow-outline" && <>
+          <p>请圈选完整的多行黄字及黑色描边，留少量边距。只提取黄字附近的深色描边，不会识别整片黑色背景；复杂背景仍可能混入，请先检查模板和处理预览。模板保留样图中的倾斜形状，不会自动适配不同倾角，角度变化需重新提取。</p>
+          <label>描边检测范围（像素）<input aria-label="描边检测范围（像素）" type="number" min="1" max="12" step="1" value={outlineRadius} disabled={busy || loading} onChange={event => { setOutlineRadius(Number(event.target.value)); setCalibrationNotice("描边检测范围已更换，请点击提取按钮重新生成模板；当前模板和正文图片尚未改变。"); }} /></label>
+          <small>按样图原尺寸计算，默认 4 像素；仅扩大黄字附近的检测范围，并非整块涂抹。提取后默认搜索图片底部，使用笔画掩膜修补。</small>
+        </>}
         <label>样图<select value={sources.includes(sample) ? sample : ""} disabled={busy} onChange={event => { setSample(event.target.value); setCalibrationNotice("样图已更换。点击下方提取按钮更新模板；正文图片不会自动改变。"); }}><option value="">使用当前文章第一张本地原图</option>{sources.map((source, i) => <option key={source} value={source}>第 {i + 1} 张 · {source.split("/").at(-1)}</option>)}</select></label>
         {selectedSource && <figure className="watermark-sample">
           <a href={selectedSource} target="_blank" rel="noreferrer" className="watermark-sample-image" aria-label={`查看第 ${selectedNumber} 张完整样图`}>
@@ -194,14 +205,15 @@ export function WatermarkTools({ articleId, content, disabled, onBusy, onPreview
         <div className="watermark-region">{["左边距 %", "上边距 %", "宽度 %", "高度 %"].map((label, i) => <label key={label}>{label}<input type="number" min="0" max="100" value={region[i]} disabled={busy} onChange={event => { setRegion(region.map((v, n) => n === i ? Number(event.target.value) : v)); setCalibrationNotice("提取范围已调整，请点击提取按钮重新生成模板。"); }} /></label>)}</div>
         <button className="editor-secondary" type="button" disabled={disabled || busy || loading || !articleId || !sources.length} onClick={() => void calibrate()}>{operation === "calibrate" ? `正在提取${colorLabel}水印模板…` : `从样图区域提取${colorLabel}水印模板`}</button>
         <p role="status" className="watermark-calibration-status">{calibrationNotice || "提取只生成识别模板，不会去除正文图片上的水印。"}</p>
+        <small>支持 8 MB、4000 万像素以内的静态原图。大选区仅等比例缩小识别模板，不改变原图尺寸。</small>
         <label>或上传透明 PNG 模板<input type="file" accept="image/png" disabled={busy} onChange={event => { void uploadTemplate(event.target.files?.[0]); event.target.value = ""; }} /></label>
       </div>
       {settings && <>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img className="watermark-template-preview" src={`data:image/png;base64,${settings.template}`} alt="当前识别模板预览（棋盘背景表示透明，不是处理后的正文图片）" />
         <div className="watermark-parameters">
-          <label>处理方式<select disabled={busy} value={settings.mode} onChange={event => setSettings({ ...settings, mode: event.target.value as WatermarkSettings["mode"] })}><option value="inpaint">不透明水印：笔画掩膜修补</option><option value="inverse">半透明水印：反向混合＋局部修补</option></select></label>
-          <label>搜索区域<select disabled={busy} value={settings.search} onChange={event => setSettings({ ...settings, search: event.target.value as WatermarkSettings["search"] })}><option value="bottom-right">右下角</option><option value="all">整张图片（较慢）</option></select></label>
+          <label>处理方式<select aria-label="处理方式" disabled={busy} value={settings.mode} onChange={event => setSettings({ ...settings, mode: event.target.value as WatermarkSettings["mode"] })}><option value="inpaint">不透明水印：笔画掩膜修补</option><option value="inverse" disabled={settings.extractionColor === "yellow-outline"}>半透明水印：反向混合＋局部修补</option></select></label>
+          <label>搜索区域<select aria-label="搜索区域" disabled={busy} value={settings.search} onChange={event => setSettings({ ...settings, search: event.target.value as WatermarkSettings["search"] })}><option value="bottom-right">右下角</option><option value="bottom">底部区域（含居中水印）</option><option value="all">整张图片（较慢）</option></select></label>
           <label>水印占原图宽度 %<input type="number" min="2" max="80" step="0.1" disabled={busy} value={Number((settings.relativeWidth * 100).toFixed(2))} onChange={event => setSettings({ ...settings, relativeWidth: Number(event.target.value) / 100 })} /></label>
           <label>匹配阈值（非成功概率）<input type="number" min="0.75" max="0.99" step="0.01" disabled={busy} value={settings.threshold} onChange={event => setSettings({ ...settings, threshold: Number(event.target.value) })} /></label>
           <label>原水印叠加不透明度 %<input type="number" min="5" max="100" disabled={busy || settings.mode !== "inverse"} value={Math.round(settings.opacity * 100)} onChange={event => setSettings({ ...settings, opacity: Number(event.target.value) / 100 })} /></label>

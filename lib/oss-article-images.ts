@@ -1,8 +1,10 @@
 import OSS from "ali-oss";
-import { readFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { lstat, readFile } from "node:fs/promises";
 import path from "node:path";
 import { load } from "cheerio";
 import { MAX_IMAGES_PER_ARTICLE } from "./article-image-limits";
+import { detectedImageExtension } from "./article-images";
 import {
   isOssArticleImageSource,
   isProcessedLocalArticleImageSource,
@@ -11,7 +13,7 @@ import {
 } from "./article-image-urls";
 
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
-const PROCESSED_FILENAME_PATTERN = /^[0-9a-f]{24}\.(png|jpe?g|gif|webp)$/i;
+const LOCAL_FILENAME_PATTERN = /^[0-9a-f]{24}\.(png|jpe?g|gif|webp)$/i;
 
 type PublicationErrorKind = "configuration" | "validation" | "upload";
 
@@ -81,7 +83,7 @@ export function assertArticleUsesOssImages(articleId: string, content: string) {
   for (const image of images) {
     const source = $(image).attr("src")?.trim() || "";
     if (!isOssArticleImageSource(articleId, source)) {
-      throw new ArticleImagePublicationError("远端仅接收当前配置的 OSS 图片地址，请先在本地完成图片处理并通过同步功能上传 OSS。", "validation");
+      throw new ArticleImagePublicationError("远端仅接收当前配置的 OSS 图片地址，请先导入图片并通过同步功能上传 OSS；水印处理可选。", "validation");
     }
   }
 }
@@ -105,7 +107,7 @@ async function uploadWithRetry(client: OSS, objectKey: string, bytes: Buffer, fi
   throw new ArticleImagePublicationError(`图片上传 OSS 失败：${filename}。请检查 Bucket、地域、RAM 权限和传输加速状态。`, "upload");
 }
 
-export async function publishProcessedArticleImagesToOss(articleId: string, content: string) {
+export async function publishArticleImagesToOss(articleId: string, content: string) {
   const { $, images } = articleImageSources(content);
   assertImageCount(images.length);
   const ossPrefix = ossArticleImagePrefix(articleId);
@@ -113,21 +115,23 @@ export async function publishProcessedArticleImagesToOss(articleId: string, cont
     throw new ArticleImagePublicationError("OSS 公共访问地址配置不完整，请设置 OSS_BUCKET 或 OSS_PUBLIC_BASE_URL。", "configuration");
   }
 
-  const localSources = new Map<string, { filename: string; targetUrl: string }>();
+  const localSources = new Map<string, { filename: string; filePath: string; targetUrl: string }>();
   for (const image of images) {
     const source = $(image).attr("src")?.trim() || "";
     if (isOssArticleImageSource(articleId, source)) continue;
-    if (isRawLocalArticleImageSource(articleId, source)) {
-      throw new ArticleImagePublicationError("本地文章已发布，但暂不能同步远端：正文仍引用原始导入图片，请先完成水印处理并替换为 /article-images/ 地址后重试同步。", "validation");
+    const raw = isRawLocalArticleImageSource(articleId, source);
+    if (!raw && !isProcessedLocalArticleImageSource(articleId, source)) {
+      throw new ArticleImagePublicationError("本地文章已发布，但暂不能同步远端：正文仍有外链、Blob 或不属于当前文章的图片，请先将图片导入当前文章后重试同步；无需进行水印处理。", "validation");
     }
-    if (!isProcessedLocalArticleImageSource(articleId, source)) {
-      throw new ArticleImagePublicationError("本地文章已发布，但暂不能同步远端：正文仍有外链、Blob 或不属于当前文章的图片，请先处理后重试同步。", "validation");
+    const localPrefix = raw ? `/uploads/articles/${articleId}/` : `/article-images/${articleId}/`;
+    const filename = source.slice(localPrefix.length);
+    if (!LOCAL_FILENAME_PATTERN.test(filename)) {
+      throw new ArticleImagePublicationError(`本地图片文件名无效：${filename || source}`, "validation");
     }
-    const filename = source.slice(`/article-images/${articleId}/`.length);
-    if (!PROCESSED_FILENAME_PATTERN.test(filename)) {
-      throw new ArticleImagePublicationError(`处理后图片文件名无效：${filename || source}`, "validation");
-    }
-    localSources.set(source, { filename, targetUrl: `${ossPrefix}${filename}` });
+    // Read from the original directory directly. No watermark edits, copying
+    // into the processed directory, or deletion of either local version.
+    const filePath = path.join(/* turbopackIgnore: true */ process.cwd(), "public", raw ? "uploads/articles" : "article-images", articleId, filename);
+    localSources.set(source, { filename, filePath, targetUrl: `${ossPrefix}${filename}` });
   }
 
   if (!localSources.size) return { content, uploadedImageCount: 0 };
@@ -146,18 +150,31 @@ export async function publishProcessedArticleImagesToOss(articleId: string, cont
     timeout: 60_000,
   });
 
-  for (const { filename } of localSources.values()) {
-    const filePath = path.join(process.cwd(), "public", "article-images", articleId, filename);
+  const uploadedObjects = new Map<string, string>();
+  for (const { filename, filePath } of localSources.values()) {
     let bytes: Buffer;
     try {
+      const file = await lstat(filePath);
+      if (!file.isFile()) throw new ArticleImagePublicationError(`本地图片不是普通文件：${filename}`, "validation");
+      if (!file.size || file.size > MAX_IMAGE_BYTES) throw new ArticleImagePublicationError(`本地图片为空或超过 8 MB：${filename}`, "validation");
       bytes = await readFile(filePath);
-    } catch {
-      throw new ArticleImagePublicationError(`找不到处理后的图片：${filename}`, "validation");
+    } catch (error) {
+      if (error instanceof ArticleImagePublicationError) throw error;
+      throw new ArticleImagePublicationError(`找不到或无法读取本地图片：${filename}`, "validation");
     }
     if (!bytes.length || bytes.length > MAX_IMAGE_BYTES) {
-      throw new ArticleImagePublicationError(`处理后的图片为空或超过 8 MB：${filename}`, "validation");
+      throw new ArticleImagePublicationError(`本地图片为空或超过 8 MB：${filename}`, "validation");
+    }
+    const extension = path.extname(filename).slice(1).toLowerCase().replace(/^jpeg$/, "jpg");
+    if (detectedImageExtension(bytes) !== extension) throw new ArticleImagePublicationError(`本地图片内容与格式不符，仅支持 PNG、JPEG、GIF、WebP：${filename}`, "validation");
+    const digest = createHash("sha256").update(bytes).digest("hex");
+    const uploadedDigest = uploadedObjects.get(filename);
+    if (uploadedDigest) {
+      if (uploadedDigest !== digest) throw new ArticleImagePublicationError(`原图与处理后图片同名但内容不同，请重新导入或生成图片：${filename}`, "validation");
+      continue;
     }
     await uploadWithRetry(client, `${objectPrefix}/${articleId}/${filename}`, bytes, filename);
+    uploadedObjects.set(filename, digest);
   }
 
   for (const image of images) {
@@ -167,5 +184,5 @@ export async function publishProcessedArticleImagesToOss(articleId: string, cont
   }
   const publishedContent = $.root().html() || content;
   assertArticleUsesOssImages(articleId, publishedContent);
-  return { content: publishedContent, uploadedImageCount: localSources.size };
+  return { content: publishedContent, uploadedImageCount: uploadedObjects.size };
 }

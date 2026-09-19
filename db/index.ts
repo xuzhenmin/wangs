@@ -97,6 +97,36 @@ export function getDb() {
     );
     CREATE INDEX IF NOT EXISTS image_import_items_task_idx
       ON image_import_items (task_id, image_order);
+    CREATE TABLE IF NOT EXISTS private_video_assets (
+      id TEXT PRIMARY KEY NOT NULL,
+      object_prefix TEXT NOT NULL,
+      bucket TEXT NOT NULL,
+      region TEXT NOT NULL,
+      manifest TEXT NOT NULL,
+      wrapped_key TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS private_video_access_codes (
+      id TEXT PRIMARY KEY NOT NULL,
+      code_hash TEXT NOT NULL UNIQUE,
+      label TEXT NOT NULL DEFAULT '',
+      created_at INTEGER NOT NULL,
+      revoked_at INTEGER
+    );
+    CREATE TABLE IF NOT EXISTS private_video_sessions (
+      token_hash TEXT PRIMARY KEY NOT NULL,
+      code_id TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      expires_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS private_video_sessions_code_idx ON private_video_sessions (code_id);
+    CREATE INDEX IF NOT EXISTS private_video_sessions_expiry_idx ON private_video_sessions (expires_at);
+    CREATE TABLE IF NOT EXISTS private_video_rate_limits (
+      bucket TEXT PRIMARY KEY NOT NULL,
+      attempts INTEGER NOT NULL,
+      resets_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS private_video_rate_limits_expiry_idx ON private_video_rate_limits (resets_at);
   `);
   // Additive, idempotent upgrade: preserve historical PV with a NULL visitor.
   // The write lock also prevents two server workers racing the ALTER TABLE.

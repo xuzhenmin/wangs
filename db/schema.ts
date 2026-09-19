@@ -84,3 +84,37 @@ export const imageImportItems = sqliteTable("image_import_items", {
   index("image_import_items_task_idx").on(table.taskId, table.imageOrder),
   uniqueIndex("image_import_items_task_source_idx").on(table.taskId, table.sourceUrl),
 ]);
+
+export const privateVideoAssets = sqliteTable("private_video_assets", {
+  id: text("id").primaryKey(),
+  objectPrefix: text("object_prefix").notNull(),
+  bucket: text("bucket").notNull(),
+  region: text("region").notNull(),
+  manifest: text("manifest").notNull(),
+  wrappedKey: text("wrapped_key").notNull(),
+  createdAt: integer("created_at").notNull(),
+});
+
+export const privateVideoAccessCodes = sqliteTable("private_video_access_codes", {
+  id: text("id").primaryKey(),
+  codeHash: text("code_hash").notNull().unique(),
+  label: text("label").notNull().default(""),
+  createdAt: integer("created_at").notNull(),
+  revokedAt: integer("revoked_at"),
+});
+
+export const privateVideoSessions = sqliteTable("private_video_sessions", {
+  tokenHash: text("token_hash").primaryKey(),
+  codeId: text("code_id").notNull(),
+  createdAt: integer("created_at").notNull(),
+  expiresAt: integer("expires_at").notNull(),
+}, table => [
+  index("private_video_sessions_code_idx").on(table.codeId),
+  index("private_video_sessions_expiry_idx").on(table.expiresAt),
+]);
+
+export const privateVideoRateLimits = sqliteTable("private_video_rate_limits", {
+  bucket: text("bucket").primaryKey(),
+  attempts: integer("attempts").notNull(),
+  resetsAt: integer("resets_at").notNull(),
+}, table => [index("private_video_rate_limits_expiry_idx").on(table.resetsAt)]);

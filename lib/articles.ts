@@ -23,7 +23,7 @@ export function randomPublishedHeadlines() {
 
 export class ExternalImagesPendingError extends Error {
   constructor() {
-    super("请先在本地发布文章，完成图片处理后再同步到远端。");
+    super("请先在本地发布文章，再同步到远端。");
     this.name = "ExternalImagesPendingError";
   }
 }

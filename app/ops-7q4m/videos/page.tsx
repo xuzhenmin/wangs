@@ -3,12 +3,15 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import type { VideoJob } from '../../../lib/video-imports.mjs';
+import { isPrivateVideoId } from '../../../lib/private-video-reference';
+import VideoAccessCodes from './VideoAccessCodes';
 import styles from './videos.module.css';
 
 const names: Record<VideoJob['status'], string> = { queued: '排队', checking: '检查资源', downloading: '下载中', muxing: '封装中', verifying: '校验中', completed: '成功', failed: '失败', cancelled: '已取消' };
 const active = (job: VideoJob) => ['queued', 'checking', 'downloading', 'muxing', 'verifying'].includes(job.status);
 const megabytes = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)} MiB`;
-const hasCurrentPublication = (job: VideoJob, base: string | null) => !!base && job.publication?.status === 'uploaded' && job.publication.url === `${base}/${job.id}/video.mp4`;
+const privatePublication = (job: VideoJob) => job.publication?.status === 'uploaded' && job.publication.kind === 'private' && isPrivateVideoId(job.publication.assetId);
+const hasCurrentPublication = (job: VideoJob, base: string | null) => privatePublication(job) || (!!base && job.publication?.status === 'uploaded' && job.publication.kind !== 'private' && job.publication.url === `${base}/${job.id}/video.mp4`);
 
 export default function VideosPage() {
   const [auth, setAuth] = useState<'checking' | 'ready' | 'required'>('checking');
@@ -65,7 +68,7 @@ export default function VideosPage() {
   }
 
   async function uploadVideo(job: VideoJob) {
-    if (!window.confirm('上传后将生成供文章访客播放的 OSS 长期地址，拥有该地址的人可以访问视频。本地原文件会保留，文章不会自动发布。\n\n请确认你有权公开此视频。是否继续上传？')) return;
+    if (!window.confirm('新视频将在上传前加密，OSS 私有目录仅保存加密分片。观看者需输入有效访问码。本地原文件会保留，文章不会自动发布。\n\n请确认你有权保存并向指定观看者提供此视频。是否继续加密上传？')) return;
     const result = await action(`/api/admin/video-imports/${job.id}/oss`, { authorized: true });
     if (result?.job) {
       setJobs(current => current.map(item => item.id === result.job.id ? result.job : item));
@@ -98,8 +101,9 @@ export default function VideosPage() {
     </aside>
     <section className={`ops-main ${styles.main}`}>
       <header className="ops-head"><div><small>SUPER ADMIN / VIDEOS</small><h1>本地视频保存</h1></div><Link href="/ops-7q4m/editor">返回编辑器</Link></header>
-      <p>先保存视频到当前服务所在电脑，再手动上传 OSS。在文章编辑器中选择视频插入正文后，按需保存草稿或发布文章。最近 100 个任务每 4 秒刷新。</p>
-      <p className={styles.workflow}>本地保存 → 手动上传 OSS → 编辑器插入视频 → 保存 / 发布文章</p>
+      <p>先保存视频到当前服务所在电脑，再手动加密上传 OSS。在文章编辑器中插入后，按需保存草稿或发布文章。新视频使用访问码观看，已有公开视频不变。最近 100 个任务每 4 秒刷新。</p>
+      <p className={styles.workflow}>本地保存 → 手动加密上传 OSS → 编辑器插入 → 发布文章 → 指定观看者输入访问码</p>
+      <VideoAccessCodes onUnauthorized={clearSession} />
       {error && <p className={styles.error} role="alert">{error}</p>}
       {notice && <p role="status">{notice}</p>}
       {oss && !oss.ready && <section className={styles.card}>
@@ -158,11 +162,15 @@ export default function VideosPage() {
           {job.savedPath && <p className={styles.path}>保存位置：{job.savedPath}</p>}
           {preview === job.id && <video className={styles.preview} controls playsInline preload="metadata" src={`/api/admin/video-imports/${job.id}/file`} />}
           {job.status === 'completed' && <section className={styles.publication} aria-label="OSS 上传">
-            <div className={styles.row}><h4>文章视频 / OSS</h4><strong>{hasCurrentPublication(job, articleVideoBaseUrl) ? '已上传' : job.publication?.status === 'uploaded' ? '需要重新上传' : job.publication?.status === 'uploading' ? '上传中' : job.publication?.status === 'failed' ? '上传失败' : '未上传'}</strong></div>
+            <div className={styles.row}><h4>文章视频 / OSS</h4><strong>{privatePublication(job) ? '已加密上传' : hasCurrentPublication(job, articleVideoBaseUrl) ? '已上传（公开）' : job.publication?.status === 'uploaded' ? '配置不匹配' : job.publication?.status === 'uploading' ? '加密上传中' : job.publication?.status === 'failed' ? '上传失败' : '未上传'}</strong></div>
             {job.publication?.status === 'uploading' ? <>
-              <p role="status">正在上传到 OSS：{Math.round(Math.min(100, Math.max(0, job.publication.progress || 0)))}%</p>
+              <p role="status">正在加密处理并上传到 OSS：{Math.round(Math.min(100, Math.max(0, job.publication.progress || 0)))}%</p>
               <progress aria-label="OSS 上传进度" value={Math.min(100, Math.max(0, job.publication.progress || 0))} max={100} />
               <p>上传在后台继续，本地原文件保持不变。完成后可前往编辑器插入视频。</p>
+            </> : privatePublication(job) ? <>
+              <p>已上传加密分片，无公开 MP4 地址。资源编号：<code>{job.publication?.assetId}</code></p>
+              <Link href="/ops-7q4m/editor">去编辑器插入私密视频</Link>
+              <p>观看者使用播放站点生成的访问码。编辑器中的管理员预览不会授予普通访客观看权限。</p>
             </> : hasCurrentPublication(job, articleVideoBaseUrl) ? <>
               <label className={styles.url}>OSS 视频地址<input readOnly value={job.publication?.url || ''} onFocus={event => event.target.select()} /></label>
               <div className={styles.actions}>
@@ -175,9 +183,9 @@ export default function VideosPage() {
               <p>在编辑器的插入视频窗口中选择此视频，再保存草稿或发布文章。上传本身不会修改文章。</p>
             </> : <>
               {job.publication?.error && <p className={styles.error} role="alert">{job.publication.error}</p>}
-              {job.publication?.status === 'uploaded' && <p className={styles.hint}>此前上传的地址与当前 OSS 配置不一致，不能直接插入文章。请检查配置后，按当前配置重新上传。本地原文件仍保留。</p>}
-              <p>上传后使用 OSS 地址供文章访客播放，本地原文件保留。仅在点击并确认后上传。</p>
-              <button disabled={busy || !oss?.ready} onClick={() => { void uploadVideo(job); }}>{job.publication?.status === 'uploaded' ? '按当前配置重新上传 OSS' : job.publication?.status === 'failed' ? '重试上传 OSS' : '上传 OSS'}</button>
+              {job.publication?.status === 'uploaded' && <p className={styles.hint}>此前上传的资源与当前配置不一致，不能直接插入文章。旧资源不会覆盖或自动迁移；请恢复原配置，或重新导入为新视频。本地原文件仍保留。</p>}
+              <p>新视频加密上传到 OSS 私有目录，本地原文件保留。仅在点击并确认后上传，访问码不是防录屏或防转发措施。</p>
+              {job.publication?.status !== 'uploaded' && <button disabled={busy || !oss?.ready} onClick={() => { void uploadVideo(job); }}>{job.publication?.status === 'failed' ? '重试加密上传' : '加密上传 OSS'}</button>}
               {!oss?.ready && <p className={styles.hint}>OSS 配置就绪后即可上传；仍可预览或下载本地文件。</p>}
             </>}
           </section>}

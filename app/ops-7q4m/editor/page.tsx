@@ -305,7 +305,7 @@ export default function ContentEditorPage() {
       setActiveId(savedArticle.id);
       setDraft(articleDraft(savedArticle));
       const savedMessage = status === "published"
-        ? "内容已在本地发布；已插入的视频使用 OSS 地址，不会重复上传。图片处理后的 OSS 上传仍在同步远端时执行，请点击左侧文档上的上传图标同步文章。"
+        ? "内容已在本地发布；已插入的视频使用 OSS 地址，不会重复上传。图片上传 OSS 在同步远端时执行，水印处理可选。请点击左侧文档上的上传图标同步文章。"
         : activeId ? "草稿修改已保存。" : "草稿已创建。";
       setMessage(savedMessage);
     } catch {
@@ -454,7 +454,7 @@ export default function ContentEditorPage() {
         }));
         setMessage(`${localizedImageCount ? `${localizedImageCount} 张普通外链图片已处理。` : ""} Blob 导入任务已创建，请切换到原网页点击“发送图片到编辑器”。`);
       } else {
-        setMessage(`${localizedImageCount} 张外链图片已下载到原图目录，可先在本地发布；同步远端前请完成水印处理并替换为 /article-images/ 地址，同步时会上传 OSS。`);
+        setMessage(`${localizedImageCount} 张外链图片已下载到原图目录，可直接发布并同步远端；同步时会上传 OSS，水印处理为可选步骤。`);
       }
     } catch {
       setMessage("图片处理失败，请稍后重试。");
@@ -633,7 +633,7 @@ export default function ContentEditorPage() {
             <button className="modal-close" type="button" aria-label="关闭" disabled={syncingRemote} onClick={closeRemoteSync}>×</button>
             <span className="modal-index">REMOTE PUBLISH</span>
             <h2 id="article-sync-title">同步到远端服务器</h2>
-            <p>《{syncArticle.title}》已在本地发布。确认后先检查图片是否完成水印处理，将处理后图片上传阿里云 OSS 并替换正文链接，再向远端同步文章数据。视频复用编辑时插入的 OSS 地址，不向远端传输视频文件。</p>
+            <p>《{syncArticle.title}》已在本地发布。确认后将当前文章的本地图片（原图或处理后图片）上传阿里云 OSS 并替换正文链接，再向远端同步文章数据，无需先处理水印。已有 OSS 图片直接复用；外链或 Blob 图片请先导入。视频复用编辑时插入的 OSS 地址，不向远端传输视频文件。</p>
             <form onSubmit={uploadToRemote}>
               <label>
                 远端服务器网址或公网 IP
@@ -651,7 +651,7 @@ export default function ContentEditorPage() {
                   <b>{remoteSyncResult.status === "synced" ? "上传成功" : "上传失败"}</b>
                   <span>
                     {remoteSyncResult.status === "synced"
-                      ? `${remoteSyncResult.uploadedImageCount ? `${remoteSyncResult.uploadedImageCount} 张处理后图片已上传 OSS；` : "正文使用已有 OSS 图片；"}文章已写入远端，未向远端服务器上传图片文件。`
+                      ? `${remoteSyncResult.uploadedImageCount ? `${remoteSyncResult.uploadedImageCount} 张图片已上传 OSS；` : "正文使用已有 OSS 图片；"}文章已写入远端，未向远端服务器上传图片文件。`
                       : remoteSyncResult.detail || "未知错误。"}
                   </span>
                   {remoteSyncResult.articleUrl && <a href={remoteSyncResult.articleUrl} target="_blank" rel="noreferrer">打开远端内容页 ↗</a>}

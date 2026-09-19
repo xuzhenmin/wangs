@@ -6,16 +6,18 @@ import { load } from "cheerio";
 import { MAX_IMAGES_PER_ARTICLE } from "./article-image-limits";
 import { createColorTemplate, validateSettings, validateWatermarkTemplate } from "../scripts/watermark-engine.mjs";
 
-export type WatermarkExtractionColor = "yellow" | "black";
+export type WatermarkExtractionColor = "yellow" | "black" | "yellow-outline";
 export type WatermarkSettings = {
   template: string;
   extractionColor?: WatermarkExtractionColor;
+  outlineRadius?: number;
   relativeWidth: number;
   mode: "inpaint" | "inverse";
-  search: "bottom-right" | "all";
+  search: "bottom-right" | "bottom" | "all";
   threshold: number;
   opacity: number;
   padding: number;
+  allowLossyOutput?: boolean;
 };
 export type WatermarkResult = {
   status: "processed" | "skipped" | "failed";
@@ -25,6 +27,7 @@ export type WatermarkResult = {
   reason: string;
   region?: { x: number; y: number; width: number; height: number };
   repairedPixels?: number;
+  output?: { format: "png" | "jpeg" | "webp"; width: number; height: number; byteLength: number; lossy: boolean; quality?: number };
   platformWatermark?: {
     text: string;
     opacity: number;
@@ -89,12 +92,12 @@ export async function saveWatermarkTemplate(settings: WatermarkSettings) {
   return settings;
 }
 
-export async function calibrateColorTemplate(articleId: string, source: string, region: number[], color: WatermarkExtractionColor = "yellow") {
+export async function calibrateColorTemplate(articleId: string, source: string, region: number[], color: WatermarkExtractionColor = "yellow", outlineRadius = 4) {
   if (processing) throw new WatermarkBusyError("已有图片正在处理，请稍后再试。");
   processing = true;
   try {
     const input = await readRawSource(articleId, source);
-    const settings = await createColorTemplate(input, region, color) as WatermarkSettings;
+    const settings = await createColorTemplate(input, region, color, outlineRadius) as WatermarkSettings;
     return await saveWatermarkTemplate(settings);
   } finally { processing = false; }
 }
@@ -135,8 +138,10 @@ export async function processArticleWatermark(articleId: string, source: string,
     });
     if (result.status !== "processed" || !result.bytes) return { ...result, source };
     const bytes = Buffer.from(result.bytes);
+    const format = result.output?.format;
+    if (!bytes.length || bytes.length > 8 * 1024 * 1024 || !format || !["png", "jpeg", "webp"].includes(format)) throw new Error("处理结果格式无效或超过 8 MB。");
     const outputHash = createHash("sha256").update(bytes).digest("hex");
-    const filename = `${outputHash.slice(0, 24)}.png`;
+    const filename = `${outputHash.slice(0, 24)}.${format === "jpeg" ? "jpg" : format}`;
     const directory = path.join(root(), "public", "article-images", articleId);
     const localUrl = `/article-images/${articleId}/${filename}`;
     await mkdir(directory, { recursive: true });

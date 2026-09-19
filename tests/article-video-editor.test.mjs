@@ -8,6 +8,7 @@ const base = "https://media.example.com/article-videos";
 const id = "11111111-1111-4111-8111-111111111111";
 const src = `${base}/${id}/video.mp4`;
 const flush = () => new Promise(resolve => setImmediate(resolve));
+const privateReference = { isPrivateVideoId: value => typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(value), PRIVATE_VIDEO_ATTRIBUTE: "data-private-video-id" };
 
 function compile(filename, imports, globals = {}) {
   const code = readFileSync(new URL(`../app/ops-7q4m/editor/${filename}`, import.meta.url), "utf8");
@@ -31,8 +32,14 @@ function videoModule() {
     pause() {}
     load() {}
   }
-  return compile("ArticleVideo.ts", { "@tiptap/react": { Node: { create: options => options } } }, {
-    document: { createElement: tag => new Element(tag) }, HTMLVideoElement: Element,
+  return compile("ArticleVideo.ts", {
+    "@tiptap/react": { Node: { create: options => options } },
+    react: { createElement: (type, props) => ({ type, props }) },
+    "react-dom/client": { createRoot: host => ({ render: content => { host.player = content; }, unmount() {} }) },
+    "../../PrivateVideoPlayer": { default: "PrivateVideoPlayer" },
+    "../../../lib/private-video-reference": privateReference,
+  }, {
+    document: { createElement: tag => new Element(tag) }, HTMLVideoElement: Element, HTMLElement: Element, queueMicrotask,
   });
 }
 
@@ -64,6 +71,19 @@ test("video node preserves draft source but never loads an unapproved URL and fo
   view.destroy();
 });
 
+test("private node persists only its resource ID and previews through the explicit admin player", () => {
+  const { ArticleVideo: extension } = videoModule();
+  const node = { type: "articleVideo", attrs: { src: "https://evil.example.com/leak.mp4", assetId: id, title: "Private fixture" } };
+  const html = extension.renderHTML({ node });
+  assert.equal(html[1]["data-private-video-id"], id);
+  assert.equal(html[1].src, undefined);
+  const view = extension.addNodeView.call({ options: { articleVideoBaseUrl: null } })({ node });
+  assert.equal(view.dom.children[0].player.props.assetId, id);
+  assert.equal(view.dom.children[0].player.props.admin, true);
+  assert.equal(view.dom.children[0].src, undefined);
+  view.destroy();
+});
+
 async function pickerHarness() {
   const states = [], effects = [], requests = [], inserts = [], confirmations = [];
   let cursor = 0, tree, timer, cleanup, confirm = false, closed = 0;
@@ -79,6 +99,7 @@ async function pickerHarness() {
   };
   const picker = compile("VideoPicker.tsx", {
     react: hooks, "react/jsx-runtime": { jsx, jsxs: jsx }, "./ArticleVideo": videoModule(),
+    "../../../lib/private-video-reference": privateReference,
     "./VideoPicker.module.css": { default: new Proxy({}, { get: (_target, key) => key }) },
   }, {
     AbortController, document: { hidden: false }, window: { confirm: message => { confirmations.push(message); return confirm; } },
@@ -118,12 +139,12 @@ test("video picker never uploads or inserts on open; preview is loaded only afte
   h.cleanup(); assert.equal(h.requests[0].signal.aborted, true);
 });
 
-test("OSS upload requires public-access confirmation and completed upload still needs manual insertion", async () => {
+test("OSS upload requires private-access confirmation and completed upload still needs manual insertion", async () => {
   const h = await pickerHarness();
-  h.button("上传至 OSS").props.onClick(); await flush(); h.render();
+  h.button("加密上传至 OSS").props.onClick(); await flush(); h.render();
   assert.equal(h.requests.some(request => request.method === "POST"), false);
-  assert.match(h.confirmations[0], /任何人均可访问/);
-  h.setConfirm(true); h.button("上传至 OSS").props.onClick(); await flush(); h.render();
+  assert.match(h.confirmations[0], /加密.*私有目录.*访问码/);
+  h.setConfirm(true); h.button("加密上传至 OSS").props.onClick(); await flush(); h.render();
   const post = h.requests.find(request => request.method === "POST");
   assert.equal(post.url, `/api/admin/video-imports/${id}/oss`); assert.deepEqual(JSON.parse(post.body), { authorized: true });
   assert.equal(h.button("插入正文").props.disabled, true); assert.equal(h.inserts.length, 0);
@@ -133,10 +154,20 @@ test("OSS upload requires public-access confirmation and completed upload still 
   assert.equal(h.inserts[0].src, src); assert.equal(h.closed(), 1); h.cleanup();
 });
 
+test("private upload inserts stable asset identity without a public or expiring URL", async () => {
+  const h = await pickerHarness();
+  h.job.publication = { kind: "private", assetId: id, status: "uploaded", progress: 100 }; await h.poll();
+  assert.equal(h.button("插入正文").props.disabled, false);
+  h.button("插入正文").props.onClick();
+  assert.equal(h.inserts[0].assetId, id);
+  assert.equal(h.inserts[0].src, undefined);
+  h.cleanup();
+});
+
 test("uploaded but unapproved video URLs remain non-insertable", async () => {
   const h = await pickerHarness();
   h.job.publication = { status: "uploaded", progress: 100, url: "https://evil.example.com/video.mp4" }; await h.poll();
   assert.equal(h.button("插入正文").props.disabled, true);
-  assert.equal(h.button("按当前配置重新上传 OSS").props.disabled, false);
+  assert.equal(h.nodes().some(node => node.type === "button" && node.props.children === "按当前配置重新上传 OSS"), false);
   h.button("插入正文").props.onClick(); assert.equal(h.inserts.length, 0); h.cleanup();
 });

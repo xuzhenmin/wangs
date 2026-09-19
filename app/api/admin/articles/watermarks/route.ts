@@ -45,8 +45,10 @@ export async function POST(request: Request) {
     if (body.action === "calibrate") {
       if (!Array.isArray(body.region)) throw new Error("缺少模板区域。");
       const color = body.color === undefined ? "yellow" : body.color;
-      if (color !== "yellow" && color !== "black") throw new Error("提取颜色无效，请选择黄色或黑色。");
-      return Response.json({ settings: await calibrateColorTemplate(articleId, source, body.region, color) }, { headers });
+      if (color !== "yellow" && color !== "black" && color !== "yellow-outline") throw new Error("提取颜色无效，请选择黄色、黑色或黄色＋黑色描边。");
+      const outlineRadius = body.outlineRadius === undefined ? 4 : body.outlineRadius;
+      if (!Number.isInteger(outlineRadius) || outlineRadius < 1 || outlineRadius > 12) throw new Error("描边检测范围必须是 1 至 12 的整数像素。");
+      return Response.json({ settings: await calibrateColorTemplate(articleId, source, body.region, color, outlineRadius) }, { headers });
     }
     if (body.action !== "process") throw new Error("未知处理操作。");
     return Response.json(await processArticleWatermark(articleId, source, body.settings as WatermarkSettings, request.signal), { headers });

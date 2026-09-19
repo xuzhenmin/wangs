@@ -8,6 +8,7 @@ import TextAlign from "@tiptap/extension-text-align";
 import Placeholder from "@tiptap/extension-placeholder";
 import { ArticleVideo, isArticleVideoUrl } from "./ArticleVideo";
 import { VideoPicker } from "./VideoPicker";
+import { isPrivateVideoId } from "../../../lib/private-video-reference";
 
 function editorExtensions(withPlaceholder = false, articleVideoBaseUrl?: string | null) {
   return [
@@ -152,14 +153,14 @@ export function RichTextEditor({ content, onChange, articleVideoBaseUrl }: { con
       {showVideos && <VideoPicker articleVideoBaseUrl={articleVideoBaseUrl} onClose={() => { setShowVideos(false); videoSelection.current = null; }} onInsert={video => {
         const selection = videoSelection.current;
         if (!selection || selection.editor !== editor || editor.isDestroyed || !selection.document.eq(editor.state.doc)) return "正文已发生变化，请关闭视频库，重新选择插入位置后再试。";
-        if (!isArticleVideoUrl(video.src, articleVideoBaseUrl)) return "当前编辑器尚未取得有效的 OSS 配置，请关闭视频库并刷新编辑页面后重试。";
+        if (!isPrivateVideoId(video.assetId) && !isArticleVideoUrl(video.src, articleVideoBaseUrl)) return "当前编辑器尚未取得有效的视频资源或 OSS 配置，请关闭视频库并刷新编辑页面后重试。";
         let count = 0;
         editor.state.doc.descendants(node => { if (node.type.name === "articleVideo") count += 1; });
         if (count >= 20) return "每篇文章最多插入 20 个视频。";
         const inserted = editor.chain().focus().command(({ tr }) => {
           tr.setSelection(selection.bookmark.resolve(tr.doc));
           return true;
-        }).insertContent({ type: "articleVideo", attrs: { src: video.src, title: video.title } }).run();
+        }).insertContent({ type: "articleVideo", attrs: { src: video.assetId ? "" : video.src, assetId: video.assetId || "", title: video.title } }).run();
         if (!inserted) return "视频插入失败，请重新选择正文中的插入位置。";
       }} />}
     </div>

@@ -1,6 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Allows isolated build/runtime verification without replacing a running site's assets.
+  distDir: process.env.WANGS_BUILD_DIR || ".next",
   // ali-oss contains optional runtime-only proxy loading that Turbopack cannot
   // statically resolve. Keep the SDK in Node.js instead of bundling it.
   serverExternalPackages: ["ali-oss"],

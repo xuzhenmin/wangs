@@ -1,182 +1,181 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, readFile, rm, symlink } from 'node:fs/promises';
+import { randomBytes } from 'node:crypto';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
-import { createRequire } from 'node:module';
-import { pathToFileURL } from 'node:url';
-import ts from 'typescript';
 import { getVideoJob, listVideoJobs } from '../lib/video-imports.mjs';
+import { loadTs } from './helpers/load-typescript.mjs';
 
-const require = createRequire(import.meta.url);
-const source = await readFile(new URL('../lib/article-video-urls.ts', import.meta.url), 'utf8');
-const urlModule = `data:text/javascript;base64,${Buffer.from(ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText).toString('base64')}`;
-const urls = await import(urlModule);
-const ossSource = (await readFile(new URL('../lib/oss-videos.ts', import.meta.url), 'utf8'))
-  .replace('from "ali-oss"', `from ${JSON.stringify(pathToFileURL(require.resolve('ali-oss')).href)}`)
-  .replace('from "./article-video-urls"', `from ${JSON.stringify(urlModule)}`)
-  .replace('from "./video-download.mjs"', `from ${JSON.stringify(new URL('../lib/video-download.mjs', import.meta.url).href)}`)
-  .replace('from "./video-imports.mjs"', `from ${JSON.stringify(new URL('../lib/video-imports.mjs', import.meta.url).href)}`);
-const oss = await import(`data:text/javascript;base64,${Buffer.from(ts.transpileModule(ossSource, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText).toString('base64')}`);
-const ID = '11111111-1111-4111-8111-111111111111';
-const SECOND = '22222222-2222-4222-8222-222222222222';
-const keys = ['OSS_BUCKET', 'OSS_REGION', 'OSS_ENDPOINT', 'OSS_ACCESS_KEY_ID', 'OSS_ACCESS_KEY_SECRET', 'OSS_PUBLIC_BASE_URL', 'OSS_ARTICLE_VIDEO_PREFIX', 'OSS_CNAME', 'VIDEO_IMPORT_DIR'];
+const urls = loadTs('../lib/article-video-urls.ts', import.meta.url);
+const oss = loadTs('../lib/oss-videos.ts', import.meta.url);
+const storage = loadTs('../lib/oss-private-videos.ts', import.meta.url);
+const ID = '11111111-1111-4111-8111-111111111111', SECOND = '22222222-2222-4222-8222-222222222222';
+const manifest = '#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:6\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-PLAYLIST-TYPE:VOD\n#EXT-X-KEY:METHOD=AES-128,URI="key.bin",IV=0x0123456789abcdef0123456789abcdef\n#EXTINF:6.000000,\nsegment-00000.ts\n#EXT-X-ENDLIST\n';
+const keys = ['OSS_BUCKET', 'OSS_REGION', 'OSS_ENDPOINT', 'OSS_ACCESS_KEY_ID', 'OSS_ACCESS_KEY_SECRET', 'OSS_PUBLIC_BASE_URL', 'OSS_ARTICLE_VIDEO_PREFIX', 'OSS_ARTICLE_IMAGE_PREFIX', 'OSS_CNAME', 'VIDEO_IMPORT_DIR', 'PRIVATE_VIDEO_UPLOAD_ENABLED', 'PRIVATE_VIDEO_MASTER_KEY', 'PRIVATE_VIDEO_OSS_PREFIX'];
 
 async function fixture(t, jobs = [{ id: ID }]) {
   const directory = await mkdtemp(path.join(tmpdir(), 'video-oss-'));
   const previous = Object.fromEntries(keys.map(key => [key, process.env[key]]));
   for (const key of keys) delete process.env[key];
-  Object.assign(process.env, { VIDEO_IMPORT_DIR: directory, OSS_BUCKET: 'fixture-bucket', OSS_REGION: 'oss-cn-hangzhou', OSS_ACCESS_KEY_ID: 'fixture-access-key', OSS_ACCESS_KEY_SECRET: 'fixture-secret-do-not-log' });
-  delete globalThis[Symbol.for('shenxiang.video-imports.v1')];
-  delete globalThis[Symbol.for('shenxiang.video-oss-queue.v1')];
+  Object.assign(process.env, { VIDEO_IMPORT_DIR: directory, OSS_BUCKET: 'fixture-bucket', OSS_REGION: 'oss-cn-hangzhou', OSS_ACCESS_KEY_ID: 'fixture-access-key', OSS_ACCESS_KEY_SECRET: 'fixture-secret-do-not-log', PRIVATE_VIDEO_UPLOAD_ENABLED: 'true', PRIVATE_VIDEO_MASTER_KEY: randomBytes(32).toString('base64') });
+  delete globalThis[Symbol.for('shenxiang.video-imports.v1')]; delete globalThis[Symbol.for('shenxiang.video-oss-queue.v1')];
   for (const item of jobs) {
     const job = { title: 'Synthetic fixture', sourceHost: 'fixture.invalid', createdAt: Date.now(), status: 'completed', downloaded: 1, total: 1, bytes: 24, fileBytes: 24, ...item };
-    const jobPath = path.join(directory, job.id);
-    await mkdir(jobPath);
+    const jobPath = path.join(directory, job.id); await mkdir(jobPath);
     await writeFile(path.join(jobPath, 'video.mp4'), Buffer.alloc(24, 42));
     await writeFile(path.join(jobPath, 'result.json'), JSON.stringify(job));
   }
   t.after(async () => {
-    delete globalThis[Symbol.for('shenxiang.video-imports.v1')];
-    delete globalThis[Symbol.for('shenxiang.video-oss-queue.v1')];
+    delete globalThis[Symbol.for('shenxiang.video-imports.v1')]; delete globalThis[Symbol.for('shenxiang.video-oss-queue.v1')];
     for (const [key, value] of Object.entries(previous)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }
     await rm(directory, { recursive: true, force: true });
   });
   return directory;
 }
-const published = id => ({ status: 'uploaded', progress: 100, url: `${urls.ossArticleVideoBaseUrl()}/${id}/video.mp4`, objectKey: `article-videos/${id}/video.mp4`, uploadedAt: Date.now() });
+const publicResult = id => ({ status: 'uploaded', progress: 100, url: `${urls.ossArticleVideoBaseUrl()}/${id}/video.mp4`, objectKey: `article-videos/${id}/video.mp4`, uploadedAt: Date.now() });
+const privateResult = id => ({ kind: 'private', assetId: id, status: 'uploaded', progress: 100, uploadedAt: Date.now() });
+const descriptor = id => ({ id, objectPrefix: `private-videos/${id}`, bucket: 'fixture-bucket', region: 'oss-cn-hangzhou', manifest, createdAt: Date.now() });
 async function until(predicate) {
   for (let i = 0; i < 200; i++) { if (predicate()) return; await new Promise(resolve => setTimeout(resolve, 5)); }
   assert.fail('Timed out waiting for synthetic queue');
 }
+function syntheticPackage(directory) {
+  const key = randomBytes(16);
+  return { key, directory, duration: 6, manifest, segments: [{ name: 'segment-00000.ts', file: path.join(directory, 'segment-00000.ts'), bytes: 32 }], cleanup: async () => { key.fill(0); } };
+}
+const defaultSeams = { findAsset: () => null, saveAsset: asset => asset, wrapKey: () => 'wrapped-only', verifyPrivate: async () => {} };
+const savedAssetSeams = { findAsset: id => ({ ...descriptor(id), wrappedKey: 'wrapped-only' }), unwrapKey: () => Buffer.alloc(16) };
 
-test('permanent OSS video URL policy rejects foreign, local, signed and malformed sources', async t => {
+test('permanent legacy MP4 policy remains strict; existing public uploads stay unchanged when rollout is off', async t => {
   await fixture(t);
-  const base = 'https://fixture-bucket.oss-accelerate.aliyuncs.com/article-videos';
-  assert.equal(urls.ossArticleVideoBaseUrl(), base);
+  const base = urls.ossArticleVideoBaseUrl();
   assert.equal(urls.isOssArticleVideoSource(`${base}/${ID}/video.mp4`), true);
-  for (const value of [
-    `${base}/${ID}/video.mp4?auth_key=secret`, `${base}/${ID}/video.mp4#x`, `${base}/${ID}/other.mp4`,
-    `${base}/${ID}/../video.mp4`, `${base}/${ID}%2Fvideo.mp4`, `${base}/${ID}/video.mp4/`,
-    `http://fixture-bucket.oss-accelerate.aliyuncs.com/article-videos/${ID}/video.mp4`,
-    `https://evil.example/article-videos/${ID}/video.mp4`, `https://fixture-bucket.oss-accelerate.aliyuncs.com.evil.example/article-videos/${ID}/video.mp4`,
-    `/api/admin/video-imports/${ID}/file`, 'blob:https://example.com/abc',
-  ]) assert.equal(urls.isOssArticleVideoSource(value), false, value);
-  process.env.OSS_PUBLIC_BASE_URL = 'https://cdn.example.com/media'; process.env.OSS_ARTICLE_VIDEO_PREFIX = '/my-videos/';
-  assert.equal(urls.ossArticleVideoBaseUrl(), 'https://cdn.example.com/media/my-videos');
-  for (const value of ['https://127.0.0.1', 'https://localhost', 'https://127.1', 'https://[::1]', 'https://169.254.169.254', 'https://192.168.1.2', 'https://user:pass@cdn.example.com', 'https://cdn.example.com?token=x', 'https://cdn.example.com/x/../y', 'https://cdn.example.com/%2e', 'http://cdn.example.com']) {
-    process.env.OSS_PUBLIC_BASE_URL = value; assert.equal(urls.ossArticleVideoBaseUrl(), null, value);
-  }
-  process.env.OSS_PUBLIC_BASE_URL = 'https://cdn.example.com';
-  for (const value of ['../video', 'video//files', 'video?key=x']) { process.env.OSS_ARTICLE_VIDEO_PREFIX = value; assert.equal(urls.ossArticleVideoBaseUrl(), null); }
+  for (const value of [`${base}/${ID}/video.mp4?token=x`, `${base}/${ID}/video.mp4#x`, `${base}/${ID}/../video.mp4`, `${base}/${ID}%2Fvideo.mp4`, 'http://127.0.0.1/video.mp4', 'blob:https://example.com/id', 'https://other.example/video.mp4']) assert.equal(urls.isOssArticleVideoSource(value), false);
+  const job = getVideoJob(ID); job.publication = publicResult(ID);
+  delete process.env.PRIVATE_VIDEO_UPLOAD_ENABLED;
+  assert.equal(oss.enqueueVideoOssUpload(ID, true), job);
+  assert.equal(await oss.uploadVideoFileToOss(job, { createClient: () => assert.fail('legacy is never reuploaded') }), job.publication);
+  assert.equal(oss.videoOssStatus().ready, false);
+  assert.match(oss.videoOssStatus().message, /PRIVATE_VIDEO_UPLOAD_ENABLED/);
 });
 
-test('multipart uploader uses a private filepath, bounded single-part concurrency and verified permanent URL', async t => {
-  const directory = await fixture(t);
-  const progress = [], calls = [];
-  const job = getVideoJob(ID);
-  const result = await oss.uploadVideoFileToOss(job, {
+test('new upload sends encrypted segments only, with private ACL, verifies before registering, and clears plaintext key', async t => {
+  const directory = await fixture(t), packaged = syntheticPackage(directory), calls = [], progress = [];
+  await writeFile(packaged.segments[0].file, Buffer.alloc(32, 63));
+  process.env.OSS_CNAME = 'true'; process.env.OSS_ENDPOINT = 'https://untrusted.example'; process.env.OSS_PUBLIC_BASE_URL = 'https://public-cdn.example';
+  const result = await oss.uploadVideoFileToOss(getVideoJob(ID), {
+    ...defaultSeams, packageVideo: async file => { assert.equal(file, path.join(directory, ID, 'video.mp4')); return packaged; },
     progress: value => progress.push(value),
     createClient: config => {
-      assert.equal(config.authorizationV4, true); assert.equal(config.timeout, 60000); assert.equal(config.retryMax, 2);
-      return {
-        multipartUpload: async (key, file, options) => {
-          calls.push(key); assert.equal(file, path.join(directory, ID, 'video.mp4')); assert.equal(typeof file, 'string');
-          assert.equal(options.parallel, 1); assert.equal(options.partSize, 8 * 1024 * 1024); assert.equal(options.mime, 'video/mp4');
-          assert.equal(options.headers['Content-Disposition'], 'inline'); assert.ok(!JSON.stringify(options).includes('x-oss-object-acl'));
-          await options.progress(0.5, { uploadId: 'fixture-upload-secret' }); await options.progress(1);
-          return {};
-        }, cancel() { assert.fail('successful upload should not cancel'); }, abortMultipartUpload() { assert.fail('successful upload should not abort'); },
-      };
+      assert.equal(config.cname, false); assert.equal(config.endpoint, 'https://oss-cn-hangzhou.aliyuncs.com'); assert.equal(config.authorizationV4, true);
+      return { put: async (name, file, options) => {
+        calls.push('put'); assert.equal(name, `private-videos/${ID}/segment-00000.ts`); assert.equal(file, packaged.segments[0].file);
+        assert.equal(options.headers['x-oss-object-acl'], 'private'); assert.equal(options.headers['Cache-Control'], 'private, no-store'); assert.equal(options.mime, 'video/mp2t');
+      }, cancel() { assert.fail('successful upload does not cancel'); } };
     },
-    verifyPublic: async (url, bytes) => { calls.push('verify'); assert.equal(url, published(ID).url); assert.equal(bytes, 24); },
+    verifyPrivate: async asset => { assert.equal(asset.manifest, manifest); assert.ok(!('wrappedKey' in asset)); calls.push('verify'); },
+    wrapKey: (id, key) => { assert.equal(id, ID); assert.equal(key.length, 16); calls.push('wrap'); return 'wrapped-only'; },
+    saveAsset: asset => { assert.equal(asset.wrappedKey, 'wrapped-only'); calls.push('save'); return asset; },
   });
-  assert.deepEqual(progress, [50, 99]); assert.equal(calls.length, 2); assert.equal(result.status, 'uploaded'); assert.equal(result.progress, 100);
-  assert.ok(!JSON.stringify(result).includes('secret'));
-  assert.equal((await readFile(path.join(directory, ID, 'video.mp4'))).length, 24);
+  assert.deepEqual(calls, ['put', 'verify', 'wrap', 'save']); assert.deepEqual(progress, [1, 95]);
+  assert.equal(result.kind, 'private'); assert.equal(result.assetId, ID); assert.equal(result.url, undefined); assert.equal(result.status, 'uploaded');
+  assert.ok(packaged.key.every(byte => byte === 0)); assert.equal((await readFile(path.join(directory, ID, 'video.mp4'))).length, 24);
 });
 
-test('failed multipart aborts only its upload, redacts SDK details and retains local video', async t => {
+test('existing private uploads fail closed on missing metadata or wrong master key without overwriting ciphertext', async t => {
+  await fixture(t); const job = getVideoJob(ID); job.publication = privateResult(ID);
+  const blockedClient = () => assert.fail('existing private ID must never overwrite its objects');
+  await assert.rejects(oss.uploadVideoFileToOss(job, { ...defaultSeams, createClient: blockedClient }), /恢复原数据库/);
+  assert.throws(() => oss.enqueueVideoOssUpload(ID, true, async () => assert.fail('do not enqueue'), { findAsset: () => null }), /重新导入/);
+  await assert.rejects(oss.uploadVideoFileToOss(job, { ...savedAssetSeams, createClient: blockedClient, unwrapKey: () => { throw new Error('bad master'); } }), /密钥无法解密/);
+  const key = randomBytes(16);
+  assert.equal(await oss.uploadVideoFileToOss(job, { ...savedAssetSeams, createClient: blockedClient, unwrapKey: () => key }), job.publication);
+  assert.ok(key.every(byte => byte === 0));
+  job.publication = { kind: 'private', assetId: ID, status: 'failed', progress: 95 };
+  let verified = false;
+  const recovered = await oss.uploadVideoFileToOss(job, { ...savedAssetSeams, createClient: blockedClient, verifyPrivate: async () => { verified = true; } });
+  assert.equal(recovered.status, 'uploaded'); assert.equal(verified, true);
+  await assert.rejects(oss.uploadVideoFileToOss(job, { ...savedAssetSeams, createClient: blockedClient, unwrapKey: () => { throw new Error('bad master'); }, verifyPrivate: async () => assert.fail('bad key cannot recover') }), /密钥无法解密/);
+});
+
+test('privacy-check failure never registers, SDK errors are redacted, timeout cleans key, original remains', async t => {
   const directory = await fixture(t);
-  let cancelled = 0; const aborts = [];
-  await assert.rejects(oss.uploadVideoFileToOss(getVideoJob(ID), {
-    createClient: () => ({
-      multipartUpload: async (key, file, options) => { await options.progress(0.2, { uploadId: 'fixture-upload-secret' }); throw Object.assign(new Error('https://host?secret=TOPSECRET'), { code: 'AccessDenied' }); },
-      cancel() { cancelled++; }, abortMultipartUpload: async (...args) => { aborts.push(args); },
-    }),
-    verifyPublic: async () => assert.fail('must not verify failed upload'),
-  }), error => /OSS 拒绝上传/.test(error.message) && !/TOPSECRET|fixture-upload-secret/.test(error.message));
-  assert.equal(cancelled, 1); assert.deepEqual(aborts, [[`article-videos/${ID}/video.mp4`, 'fixture-upload-secret', { timeout: 15000 }]]);
-  assert.equal((await readFile(path.join(directory, ID, 'video.mp4'))).length, 24);
-});
-
-test('public-link failure does not delete completed OSS object; timeout cancels and cleans parts', async t => {
-  await fixture(t);
-  const client = { multipartUpload: async () => ({}), cancel() {}, abortMultipartUpload: async () => assert.fail('completed object must not be aborted') };
-  t.mock.method(globalThis, 'fetch', async (url, options) => { assert.equal(options.method, 'HEAD'); assert.equal(options.redirect, 'error'); return new Response(null, { status: 403 }); });
-  await assert.rejects(oss.uploadVideoFileToOss(getVideoJob(ID), { createClient: () => client }), /无法匿名读取/);
-  let release; let aborted = false;
-  await assert.rejects(oss.uploadVideoFileToOss(getVideoJob(ID), {
-    timeoutMs: 10,
-    createClient: () => ({
-      multipartUpload: async (key, file, options) => { await options.progress(0, { uploadId: 'timeout-fixture' }); await new Promise((resolve, reject) => { release = reject; }); },
-      cancel() { release?.(new Error('cancelled')); }, abortMultipartUpload: async () => { aborted = true; },
-    }), verifyPublic: async () => assert.fail('timeout cannot publish'),
-  }), /超过 30 分钟/);
-  assert.equal(aborted, true);
-});
-
-test('file checks reject symlinks, missing or changed MP4 before any client is created', async t => {
-  const directory = await fixture(t);
-  const file = path.join(directory, ID, 'video.mp4');
-  const config = { createClient: () => assert.fail('invalid local file must not create OSS client') };
-  await writeFile(file, Buffer.alloc(25)); await assert.rejects(oss.uploadVideoFileToOss(getVideoJob(ID), config), /文件已改变/);
-  await rm(file); await assert.rejects(oss.uploadVideoFileToOss(getVideoJob(ID), config), /本地完整视频/);
-  const target = path.join(directory, 'other.mp4'); await writeFile(target, Buffer.alloc(24)); await symlink(target, file);
-  await assert.rejects(oss.uploadVideoFileToOss(getVideoJob(ID), config), /本地完整视频/);
-});
-
-test('OSS queue serializes, deduplicates, retries failures and persists only safe publication metadata', async t => {
-  const directory = await fixture(t, [{ id: ID }, { id: SECOND }]);
-  let active = 0, max = 0, calls = 0;
-  const upload = async (job, { progress }) => {
-    active++; max = Math.max(max, active); calls++; progress(25);
-    await new Promise(resolve => setTimeout(resolve, 20)); active--;
-    if (job.id === SECOND && calls === 2) throw new Error('https://secret.invalid?auth_key=PRIVATE');
-    return published(job.id);
-  };
-  assert.throws(() => oss.enqueueVideoOssUpload(ID, false, upload), /确认/);
-  assert.equal(oss.enqueueVideoOssUpload('missing', true, upload), null);
-  const first = oss.enqueueVideoOssUpload(ID, true, upload); assert.equal(first.publication.status, 'uploading');
-  assert.equal(oss.enqueueVideoOssUpload(ID, true, upload), first);
-  oss.enqueueVideoOssUpload(SECOND, true, upload);
-  await until(() => getVideoJob(SECOND).publication.status === 'failed');
-  assert.equal(max, 1); assert.equal(calls, 2); assert.equal(first.publication.status, 'uploaded');
-  oss.enqueueVideoOssUpload(ID, true, upload); assert.equal(calls, 2);
-  assert.ok(!getVideoJob(SECOND).publication.error.includes('PRIVATE'));
-  oss.enqueueVideoOssUpload(SECOND, true, upload); await until(() => getVideoJob(SECOND).publication.status === 'uploaded');
-  assert.equal(calls, 3);
-  for (const id of [ID, SECOND]) {
-    const saved = await readFile(path.join(directory, id, 'result.json'), 'utf8');
-    assert.ok(!/PRIVATE|fixture-secret|fixture-access|uploadId|auth_key/.test(saved));
-    assert.equal(JSON.parse(saved).publication.status, 'uploaded');
-    assert.equal((await readFile(path.join(directory, id, 'video.mp4'))).length, 24);
+  for (const mode of ['acl', 'sdk', 'timeout']) {
+    const packaged = syntheticPackage(directory); let release, canceled = 0;
+    await assert.rejects(oss.uploadVideoFileToOss(getVideoJob(ID), {
+      ...defaultSeams, packageVideo: async () => packaged, saveAsset: () => assert.fail('failed upload must not register'), timeoutMs: mode === 'timeout' ? 10 : 1000,
+      createClient: () => ({ put: async () => {
+        if (mode === 'sdk') throw Object.assign(new Error('SECRET-signed-url'), { code: 'AccessDenied' });
+        if (mode === 'timeout') await new Promise((resolve, reject) => { release = reject; });
+      }, cancel() { canceled++; release?.(new Error('cancelled')); } }),
+      verifyPrivate: async () => { throw new Error('SECRET-privacy-check'); },
+    }), error => !/SECRET/.test(error.message) && (mode !== 'timeout' || /30 分钟/.test(error.message)));
+    assert.ok(canceled > 0); assert.ok(packaged.key.every(byte => byte === 0));
   }
+  assert.equal((await readFile(path.join(directory, ID, 'video.mp4'))).length, 24);
 });
 
-test('configuration gates, queue bound and restart recovery preserve completed videos', async t => {
+test('file checks reject symlinks, missing or changed MP4 before packaging or creating OSS clients', async t => {
+  const directory = await fixture(t), file = path.join(directory, ID, 'video.mp4');
+  const options = { ...defaultSeams, createClient: () => assert.fail('invalid file'), packageVideo: async () => assert.fail('invalid file') };
+  await writeFile(file, Buffer.alloc(25)); await assert.rejects(oss.uploadVideoFileToOss(getVideoJob(ID), options), /文件已改变/);
+  await rm(file); await assert.rejects(oss.uploadVideoFileToOss(getVideoJob(ID), options), /本地完整视频/);
+  const target = path.join(directory, 'other.mp4'); await writeFile(target, Buffer.alloc(24)); await symlink(target, file);
+  await assert.rejects(oss.uploadVideoFileToOss(getVideoJob(ID), options), /本地完整视频/);
+});
+
+test('OSS verification rejects public objects and foreign namespace, signs only canonical segments', async t => {
+  await fixture(t); const asset = descriptor(ID); let heads = 0, cancels = 0;
+  const createClient = () => ({ head: async key => { heads++; assert.equal(key, `${asset.objectPrefix}/segment-00000.ts`); return { status: 200, res: { headers: { 'content-length': '32' } } }; }, cancel() { cancels++; }, signatureUrlV4: async (method, expiry, query, key) => { assert.equal(method, 'GET'); assert.equal(expiry, 60); assert.equal(key, `${asset.objectPrefix}/segment-00000.ts`); return 'https://fixture.invalid/signed'; } });
+  const deny = async (url, options) => { assert.equal(url, `https://fixture-bucket.oss-cn-hangzhou.aliyuncs.com/${asset.objectPrefix}/segment-00000.ts`); assert.equal(options.credentials, 'omit'); assert.equal(options.redirect, 'error'); return new Response(null, { status: 403 }); };
+  await storage.verifyPrivateVideoAsset(asset, { createClient, fetch: deny }); assert.equal(heads, 1);
+  assert.equal(await storage.signPrivateVideoSegment(asset, 0, { createClient }), 'https://fixture.invalid/signed');
+  await assert.rejects(storage.signPrivateVideoSegment(asset, 1, { createClient }), /分片不存在/);
+  await assert.rejects(storage.verifyPrivateVideoAsset({ ...asset, bucket: 'foreign-bucket' }, { createClient, fetch: deny }), /不一致/);
+  await assert.rejects(storage.verifyPrivateVideoAsset({ ...asset, objectPrefix: `article-videos/${ID}` }, { createClient, fetch: deny }), /不一致/);
+  for (const status of [200, 206, 404, 500]) await assert.rejects(storage.verifyPrivateVideoAsset(asset, { createClient, fetch: async () => new Response(null, { status }) }), /匿名访问/);
+  assert.ok(cancels >= 4);
+  process.env.PRIVATE_VIDEO_OSS_PREFIX = 'article-images/private'; assert.equal(storage.privateVideoOssStatus().ready, false);
+  process.env.PRIVATE_VIDEO_OSS_PREFIX = '../private'; assert.equal(storage.privateVideoOssStatus().ready, false);
+});
+
+test('OSS privacy verification is bounded to four concurrent reads and aborts within total deadline', async t => {
+  await fixture(t); const asset = descriptor(ID);
+  asset.manifest = manifest.replace('#EXT-X-ENDLIST\n', Array.from({ length: 7 }, (_, index) => `#EXTINF:6.000000,\nsegment-${String(index + 1).padStart(5, '0')}.ts\n`).join('') + '#EXT-X-ENDLIST\n');
+  let active = 0, maximum = 0;
+  const createClient = () => ({ head: async () => { active++; maximum = Math.max(maximum, active); await new Promise(resolve => setTimeout(resolve, 5)); active--; return { status: 200, res: { headers: { 'content-length': '32' } } }; }, cancel() {}, signatureUrlV4() {} });
+  await storage.verifyPrivateVideoAsset(asset, { createClient, fetch: async () => new Response(null, { status: 403 }) });
+  assert.equal(maximum, 4);
+  await assert.rejects(storage.verifyPrivateVideoAsset(asset, { timeoutMs: 5, createClient, fetch: async () => new Response(null, { status: 403 }) }), /超时/);
+  // The OSS SDK's cancel() does not interrupt HEAD; the verification deadline still must return.
+  await assert.rejects(storage.verifyPrivateVideoAsset(asset, { timeoutMs: 5,
+    createClient: () => ({ head: () => new Promise(() => {}), cancel() {}, signatureUrlV4() {} }),
+    fetch: async () => assert.fail('hung HEAD never fetches anonymous object'),
+  }), /超时/);
+});
+
+test('single upload queue deduplicates and retries, preserves safe metadata, and keeps a 12-job bound', async t => {
+  const directory = await fixture(t, [{ id: ID }, { id: SECOND }]);
+  let active = 0, maximum = 0, calls = 0;
+  const upload = async (job, { progress }) => { active++; maximum = Math.max(maximum, active); calls++; progress(25); await new Promise(resolve => setTimeout(resolve, 15)); active--; if (job.id === SECOND && calls === 2) throw new Error('SECRET'); return privateResult(job.id); };
+  assert.throws(() => oss.enqueueVideoOssUpload(ID, false, upload), /确认/);
+  const first = oss.enqueueVideoOssUpload(ID, true, upload); assert.equal(oss.enqueueVideoOssUpload(ID, true, upload), first);
+  oss.enqueueVideoOssUpload(SECOND, true, upload); await until(() => getVideoJob(SECOND).publication.status === 'failed');
+  assert.equal(maximum, 1); assert.equal(calls, 2); assert.ok(!getVideoJob(SECOND).publication.error.includes('SECRET'));
+  oss.enqueueVideoOssUpload(ID, true, upload, savedAssetSeams); assert.equal(calls, 2);
+  oss.enqueueVideoOssUpload(SECOND, true, upload); await until(() => getVideoJob(SECOND).publication.status === 'uploaded');
+  for (const id of [ID, SECOND]) { const saved = JSON.parse(await readFile(path.join(directory, id, 'result.json'), 'utf8')); assert.equal(saved.publication.kind, 'private'); assert.equal(saved.publication.assetId, id); assert.ok(!/SECRET|wrappedKey|fixture-secret/.test(JSON.stringify(saved))); }
+});
+
+test('configuration rollout, queue bound and interrupted publication recovery are explicit', async t => {
   const jobs = Array.from({ length: 13 }, (_, index) => ({ id: `${(index + 1).toString(16).padStart(8, '0')}-1111-4111-8111-111111111111` }));
-  jobs[0].publication = { status: 'uploading', progress: 75 };
-  await fixture(t, jobs);
-  const restored = listVideoJobs();
-  assert.equal(getVideoJob(jobs[0].id).status, 'completed'); assert.equal(getVideoJob(jobs[0].id).publication.status, 'failed');
-  assert.match(getVideoJob(jobs[0].id).publication.error, /服务重启/);
-  delete process.env.OSS_ACCESS_KEY_SECRET;
-  assert.equal(oss.videoOssStatus().ready, false); assert.match(oss.videoOssStatus().message, /OSS_ACCESS_KEY_SECRET/);
-  assert.throws(() => oss.enqueueVideoOssUpload(jobs[0].id, true), /OSS_ACCESS_KEY_SECRET/);
-  process.env.OSS_ACCESS_KEY_SECRET = 'fixture-secret';
-  let release; const hold = new Promise(resolve => { release = resolve; });
-  const upload = async job => { await hold; return published(job.id); };
+  jobs[0].publication = { kind: 'private', assetId: jobs[0].id, status: 'uploading', progress: 75 };
+  await fixture(t, jobs); const restored = listVideoJobs();
+  assert.equal(getVideoJob(jobs[0].id).publication.kind, 'private'); assert.equal(getVideoJob(jobs[0].id).publication.status, 'failed');
+  delete process.env.PRIVATE_VIDEO_MASTER_KEY; assert.equal(oss.videoOssStatus().ready, false); assert.match(oss.videoOssStatus().message, /PRIVATE_VIDEO_MASTER_KEY/);
+  process.env.PRIVATE_VIDEO_MASTER_KEY = randomBytes(32).toString('base64');
+  let release; const hold = new Promise(resolve => { release = resolve; }); const upload = async job => { await hold; return privateResult(job.id); };
   for (const job of restored.slice(0, 12)) oss.enqueueVideoOssUpload(job.id, true, upload);
   assert.throws(() => oss.enqueueVideoOssUpload(restored[12].id, true, upload), /队列已满/);
   release(); await until(() => restored.slice(0, 12).every(job => job.publication.status === 'uploaded'));
