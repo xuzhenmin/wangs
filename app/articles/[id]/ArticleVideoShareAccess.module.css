@@ -1,0 +1,4 @@
+.notice { display:flex; align-items:center; justify-content:space-between; gap:12px; margin:16px 0; padding:10px 12px; border:1px solid #4e4739; border-radius:8px; background:#25221cd9; color:#d6cbb5; font-size:13px; line-height:1.6; }
+.notice button { flex-shrink:0; padding:5px 10px; border:1px solid #887452; border-radius:5px; background:#332b1e; color:#f4daaa; cursor:pointer; font:inherit; }
+.notice button:focus-visible { outline:2px solid #f4daaa; outline-offset:3px; }
+@media(max-width:480px) { .notice { align-items:flex-start; flex-direction:column; gap:8px; } }

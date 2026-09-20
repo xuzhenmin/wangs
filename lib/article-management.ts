@@ -1,11 +1,13 @@
 import { getDb } from "../db";
 import { accessFromUsage, type ArticleAccess } from "./article-access";
 import type { ArticleVisitorRegion } from "./article-visitor-region";
+import { privateVideoIdsFromContent } from "./article-videos";
 
 export type ManagedArticle = {
   id: string; title: string; status: "draft" | "published";
   createdAt: number; updatedAt: number; viewCount: number; visitorCount: number; lastViewedAt: number | null;
   access: ArticleAccess;
+  hasPrivateVideos: boolean;
 };
 export type ArticleListResult = {
   articles: ManagedArticle[]; total: number; page: number; pageSize: number;
@@ -25,7 +27,7 @@ export function listManagedArticles(params: URLSearchParams): ArticleListResult 
   const values = [query, query, selectedStatus, selectedStatus];
   const { total } = db.prepare(`SELECT COUNT(*) AS total FROM articles a WHERE ${filter}`).get(...values) as { total: number };
   const page = Math.min(Math.max(1, Number.isSafeInteger(requested) ? requested : 1), Math.max(1, Math.ceil(total / pageSize)));
-  const articles = db.prepare(`SELECT a.id, a.title, a.status,
+  const articles = db.prepare(`SELECT a.id, a.title, a.status, a.content,
     a.created_at AS createdAt, a.updated_at AS updatedAt,
     COALESCE(v.views, 0) AS viewCount, COALESCE(v.visitors, 0) AS visitorCount, v.latest AS lastViewedAt,
     COALESCE(v.unidentified, 0) AS unidentified,
@@ -38,7 +40,8 @@ export function listManagedArticles(params: URLSearchParams): ArticleListResult 
     ) v ON v.article_id = a.id
     LEFT JOIN article_access_policies p ON p.article_id = a.id
     WHERE ${filter} ORDER BY ${order} DESC, a.id ASC LIMIT ? OFFSET ?
-  `).all(...values, pageSize, (page - 1) * pageSize) as (Omit<ManagedArticle, "access"> & {
+  `).all(...values, pageSize, (page - 1) * pageSize) as (Omit<ManagedArticle, "access" | "hasPrivateVideos"> & {
+    content: string;
     unidentified: number; uvLimit: number | null; pvLimit: number | null; revision: number;
   })[];
   const stats = db.prepare(`SELECT COUNT(*) AS total,
@@ -47,8 +50,9 @@ export function listManagedArticles(params: URLSearchParams): ArticleListResult 
     (SELECT COUNT(*) FROM article_view_events v JOIN articles a ON a.id = v.article_id) AS views,
     (SELECT COUNT(DISTINCT v.visitor_key) FROM article_view_events v JOIN articles a ON a.id = v.article_id) AS visitors
     FROM articles`).get() as ArticleListResult["stats"];
-  return { articles: articles.map(({ unidentified, uvLimit, pvLimit, revision, ...article }) => ({
-    ...article, access: accessFromUsage({ uvLimit, pvLimit, revision }, {
+  return { articles: articles.map(({ content, unidentified, uvLimit, pvLimit, revision, ...article }) => ({
+    ...article, hasPrivateVideos: privateVideoIdsFromContent(content).length > 0,
+    access: accessFromUsage({ uvLimit, pvLimit, revision }, {
       views: article.viewCount, visitors: article.visitorCount, unidentified,
     }),
   })), total, page, pageSize, stats };

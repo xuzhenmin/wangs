@@ -1,11 +1,13 @@
-import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { getDb } from "../db";
 import { PrivateVideoError, PRIVATE_VIDEO_ID } from "./private-videos";
+import { requestAuthorizedForArticleVideo } from "./article-video-share";
+import { assertPrivateVideoSameOrigin, privateVideoSecureTransport, privateVideoCookie, privateVideoCookieToken, privateVideoTokenHash as hash, recordPrivateVideoAttempt } from "./private-video-auth-utils";
+export { assertPrivateVideoSameOrigin, privateVideoSecureTransport, privateVideoSameOrigin } from "./private-video-auth-utils";
 
 export const PRIVATE_VIDEO_SESSION_SECONDS = 30 * 24 * 60 * 60;
 const COOKIE = "shenxiang_private_video";
 export type PrivateVideoAccessCode = { id: string; label: string; createdAt: number; revokedAt: number | null };
-const hash = (kind: string, value: string) => createHash("sha256").update(`private-video-${kind}-v1:${value}`).digest("hex");
 
 export function listPrivateVideoAccessCodes(): PrivateVideoAccessCode[] {
   return getDb().prepare("SELECT id, label, created_at AS createdAt, revoked_at AS revokedAt FROM private_video_access_codes ORDER BY created_at DESC LIMIT 1000").all() as unknown as PrivateVideoAccessCode[];
@@ -27,63 +29,40 @@ export function revokePrivateVideoAccessCode(id: string) {
   } catch (error) { db.exec("ROLLBACK"); throw error; }
 }
 
-function localHttp(request: Request) {
-  const url = new URL(request.url);
-  const host = (request.headers.get("host") || url.host).toLowerCase();
-  return url.protocol === "http:" && /^(?:localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/.test(host) && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
-}
-export function privateVideoSecureTransport(request: Request) {
-  // Production deployments must bind Next to loopback and overwrite this
-  // header at the trusted TLS proxy, never accept an untrusted direct backend.
-  return new URL(request.url).protocol === "https:" || request.headers.get("x-forwarded-proto") === "https" || localHttp(request);
-}
-export function privateVideoSameOrigin(request: Request) {
-  try {
-    const origin = new URL(request.headers.get("origin") || "");
-    const expected = request.headers.get("host") || new URL(request.url).host;
-    return privateVideoSecureTransport(request) && origin.host === expected && (origin.protocol === "https:" || (origin.protocol === "http:" && localHttp(request))) && request.headers.get("sec-fetch-site") !== "cross-site";
-  } catch { return false; }
-}
-export function assertPrivateVideoSameOrigin(request: Request) {
-  if (!privateVideoSameOrigin(request)) throw new PrivateVideoError("请从本站页面操作私密视频。", 403);
-}
 function cookieToken(request: Request) {
-  const value = (request.headers.get("cookie") || "").split(";").map(part => part.trim()).find(part => part.startsWith(`${COOKIE}=`))?.slice(COOKIE.length + 1);
-  return value && /^[A-Za-z0-9_-]{43}$/.test(value) ? value : null;
+  return privateVideoCookieToken(request, COOKIE);
 }
 export function privateVideoSessionCookie(token: string, request: Request, clear = false) {
-  return `${COOKIE}=${clear ? "" : token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${clear ? 0 : PRIVATE_VIDEO_SESSION_SECONDS}${localHttp(request) ? "" : "; Secure"}`;
+  return privateVideoCookie(COOKIE, clear ? "" : token, request, clear ? 0 : PRIVATE_VIDEO_SESSION_SECONDS);
 }
 export function privateVideoRequestAuthorized(request: Request, now = Date.now()) {
   if (!privateVideoSecureTransport(request) || request.headers.get("sec-fetch-site") === "cross-site") return false;
   const token = cookieToken(request); if (!token) return false;
   return Boolean(getDb().prepare("SELECT 1 FROM private_video_sessions s JOIN private_video_access_codes c ON c.id = s.code_id WHERE s.token_hash = ? AND s.expires_at > ? AND c.revoked_at IS NULL").get(hash("session", token), now));
 }
-export function requirePrivateVideoAccess(request: Request) {
-  if (!privateVideoRequestAuthorized(request)) throw new PrivateVideoError("请输入有效的视频访问码。", 401);
+export function privateVideoRequestAuthorizedForAsset(request: Request, assetId: string, now = Date.now()) {
+  if (!PRIVATE_VIDEO_ID.test(assetId)) return false;
+  return privateVideoRequestAuthorized(request, now) || requestAuthorizedForArticleVideo(request, assetId, now);
+}
+export function requirePrivateVideoAccess(request: Request, assetId?: string) {
+  const authorized = assetId === undefined ? privateVideoRequestAuthorized(request) : privateVideoRequestAuthorizedForAsset(request, assetId);
+  if (!authorized) throw new PrivateVideoError("请输入有效的视频访问码或使用有效的文章分享链接。", 401);
 }
 export function revokePrivateVideoSession(request: Request) {
   const token = cookieToken(request);
   if (token) getDb().prepare("DELETE FROM private_video_sessions WHERE token_hash = ?").run(hash("session", token));
 }
-
-// Durable global + per-client caps: forwarded headers cannot bypass the global cap.
-function recordAttempt(request: Request, now: number) {
-  const db = getDb(); const client = request.headers.get("x-real-ip") || request.headers.get("x-forwarded-for")?.split(",")[0].trim() || "unknown";
-  const buckets: [string, number][] = [["global", 500], [hash("rate", client.slice(0, 200)), 20]];
-  db.prepare("DELETE FROM private_video_rate_limits WHERE resets_at <= ?").run(now);
-  for (const [bucket, limit] of buckets) {
-    const row = db.prepare("SELECT attempts FROM private_video_rate_limits WHERE bucket = ?").get(bucket);
-    if (row && Number(row.attempts) >= limit) throw new PrivateVideoError("尝试次数过多，请 15 分钟后重试。", 429);
-  }
-  for (const [bucket] of buckets) db.prepare("INSERT INTO private_video_rate_limits (bucket, attempts, resets_at) VALUES (?, 1, ?) ON CONFLICT(bucket) DO UPDATE SET attempts = attempts + 1").run(bucket, now + 15 * 60 * 1000);
+export function matchesPrivateVideoAccessCode(candidate: unknown) {
+  const normalized = typeof candidate === "string" ? candidate.trim() : "";
+  return /^[A-Za-z0-9_-]{32}$/.test(normalized) && Boolean(getDb().prepare("SELECT 1 FROM private_video_access_codes WHERE code_hash = ? AND revoked_at IS NULL").get(hash("code", normalized)));
 }
+
 export function exchangePrivateVideoCode(request: Request, candidate: unknown) {
   assertPrivateVideoSameOrigin(request);
   const db = getDb(); const now = Date.now(); let token: string | null = null;
   db.exec("BEGIN IMMEDIATE");
   try {
-    recordAttempt(request, now);
+    recordPrivateVideoAttempt(request, now);
     const normalized = typeof candidate === "string" ? candidate.trim() : "";
     const match = /^[A-Za-z0-9_-]{32}$/.test(normalized) ? db.prepare("SELECT id FROM private_video_access_codes WHERE code_hash = ? AND revoked_at IS NULL").get(hash("code", normalized)) : undefined;
     if (match) {

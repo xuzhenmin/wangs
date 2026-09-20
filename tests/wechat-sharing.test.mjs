@@ -145,20 +145,24 @@ test("cover endpoint refuses draft or missing articles", async () => {
   assert.equal(response.headers.get("cache-control"), "no-store");
 });
 
-async function exerciseClient({ userAgent, enabled = true, entry = "https://news.example.com/?entry=1#top" }) {
+async function exerciseClient({ userAgent, enabled = true, entry = "https://news.example.com/?entry=1#top", href = "https://news.example.com/articles/current?from=chat#body", link = "/articles/current", afterReady }) {
   const calls = [];
   let effect;
   let ready;
+  let sdkError;
+  const listeners = new Map();
   const sdk = {
     config(config) { calls.push(["config", config]); },
     ready(callback) { ready = callback; callback(); },
-    error() {},
+    error(callback) { sdkError = callback; },
     updateAppMessageShareData(data) { calls.push(["friends", data]); },
     updateTimelineShareData(data) { calls.push(["timeline", data]); },
   };
   const window = {
-    location: { href: "https://news.example.com/articles/current?from=chat#body", origin: "https://news.example.com" },
+    location: { href, origin: new URL(href).origin },
     setTimeout, clearTimeout,
+    addEventListener: (name, callback) => listeners.set(name, callback),
+    removeEventListener: name => listeners.delete(name),
   };
   const context = vm.createContext({
     window, location: window.location, navigator: { userAgent },
@@ -177,10 +181,15 @@ async function exerciseClient({ userAgent, enabled = true, entry = "https://news
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
   }).outputText;
   const loadedModule = { exports: {} };
-  vm.runInContext(`(function(require,module,exports){${compiled}\n})`, context)(() => ({ useEffect(callback) { effect = callback; } }), loadedModule, loadedModule.exports);
-  loadedModule.exports.default({ title: "本篇标题", desc: "本篇摘要", link: "/articles/current", imgUrl: "/api/share/cover/current?v=1" });
+  vm.runInContext(`(function(require,module,exports){${compiled}\n})`, context)(name => {
+    if (name === "react") return { useEffect(callback) { effect = callback; } };
+    if (name === "../lib/article-video-share-link") return loader()("lib/article-video-share-link.ts");
+    throw new Error(`Unexpected import: ${name}`);
+  }, loadedModule, loadedModule.exports);
+  loadedModule.exports.default({ title: "本篇标题", desc: "本篇摘要", link, imgUrl: "/api/share/cover/current?v=1" });
   const cleanup = effect();
   for (let i = 0; i < 30; i++) await Promise.resolve();
+  await afterReady?.({ window, listeners, calls, sdkError });
   cleanup?.();
   const before = calls.length;
   ready?.();
@@ -200,6 +209,26 @@ test("WeChat client initializes both share menus with article-specific absolute 
     assert.equal(data.link, "https://news.example.com/articles/current");
     assert.equal(data.imgUrl, "https://news.example.com/api/share/cover/current?v=1");
   }
+});
+
+test("WeChat forwards valid same-article bearer fragments but excludes them from signing and warning logs", async () => {
+  const token = "a".repeat(32), replacement = "b".repeat(32);
+  const calls = await exerciseClient({ userAgent: "Android MicroMessenger/8.0", href: `https://news.example.com/articles/${id}?from=chat#video-access=${token}`, link: `/articles/${id}`,
+    afterReady: ({ window, listeners, calls, sdkError }) => {
+      const first = calls.find(([type]) => type === "friends")[1];
+      assert.equal(first.link, `https://news.example.com/articles/${id}#video-access=${token}`);
+      first.fail({ errMsg: `failed URL ${first.link}` }); sdkError({ errMsg: `credential ${token}` });
+      window.location.href = `https://news.example.com/articles/${id}#video-access=${replacement}`;
+      listeners.get("hashchange")();
+      assert.equal(calls.filter(([type]) => type === "friends").at(-1)[1].link, `https://news.example.com/articles/${id}#video-access=${replacement}`);
+    },
+  });
+  const request = calls.find(([type]) => type === "fetch")[1];
+  assert.ok(!request.includes(token));
+  assert.ok(!new URL(request, "https://news.example.com").searchParams.get("url").includes("#"));
+  assert.ok(calls.filter(([type]) => type === "warning").every(([, message]) => !JSON.stringify(message).includes(token)));
+  const crossHost = await exerciseClient({ userAgent: "Android MicroMessenger/8.0", href: `http://localhost:3217/articles/${id}#video-access=${token}`, link: `https://news.example.com/articles/${id}` });
+  assert.equal(crossHost.find(([type]) => type === "friends")[1].link, `https://news.example.com/articles/${id}`);
 });
 
 test("iOS signs the entry URL while sharing the current article; disabled/non-WeChat skips SDK", async () => {

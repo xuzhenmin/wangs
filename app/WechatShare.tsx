@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { articleVideoShareLink } from "../lib/article-video-share-link";
 
 type ShareData = { title: string; desc: string; link: string; imgUrl: string };
 type SdkResult = { errMsg?: string };
@@ -38,7 +39,16 @@ export default function WechatShare({ title, desc, link, imgUrl }: ShareData) {
     let cancelled = false;
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), 20000);
-    const report = (result: SdkResult) => console.warn("[wechat-share]", result.errMsg || "分享信息设置失败");
+    // SDK failures sometimes include the full share URL. Never log their payload or a bearer fragment.
+    const report = () => console.warn("[wechat-share]", "分享信息设置失败");
+    let readySdk: Sdk | undefined;
+    const updateShare = () => {
+      if (cancelled || !readySdk) return;
+      const data = { title, desc, link: articleVideoShareLink(link, window.location.href), imgUrl: new URL(imgUrl, location.origin).href };
+      readySdk.updateAppMessageShareData({ ...data, fail: report });
+      readySdk.updateTimelineShareData({ title: data.title, link: data.link, imgUrl: data.imgUrl, fail: report });
+    };
+    window.addEventListener("hashchange", updateShare);
     void (async () => {
       // iOS WKWebView signs the initial document URL across client-side navigation.
       const entry = performance.getEntriesByType("navigation")[0]?.name;
@@ -46,22 +56,20 @@ export default function WechatShare({ title, desc, link, imgUrl }: ShareData) {
       const url = pageUrl.split("#", 1)[0];
       const response = await fetch(`/api/wechat/config?url=${encodeURIComponent(url)}`, { signal: controller.signal, cache: "no-store" });
       const config = await response.json();
-      if (!response.ok) throw new Error(config.message || "微信分享配置加载失败");
+      if (!response.ok) throw new Error("微信分享配置加载失败");
       if (!config.enabled || cancelled) return;
       const wx = await loadSdk();
       if (cancelled) return;
-      const data = { title, desc, link: new URL(link, location.origin).href, imgUrl: new URL(imgUrl, location.origin).href };
-      wx.error((result) => { if (!cancelled) report(result); });
+      wx.error(() => { if (!cancelled) report(); });
       wx.config({ debug: false, appId: config.appId, timestamp: config.timestamp, nonceStr: config.nonceStr, signature: config.signature, jsApiList: config.jsApiList });
       wx.ready(() => {
         if (cancelled) return;
-        wx.updateAppMessageShareData({ ...data, fail: report });
-        wx.updateTimelineShareData({ title: data.title, link: data.link, imgUrl: data.imgUrl, fail: report });
+        readySdk = wx; updateShare();
       });
-    })().catch((error) => {
-      if (!cancelled) console.warn("[wechat-share]", error instanceof Error ? error.message : "微信分享暂时不可用");
+    })().catch(() => {
+      if (!cancelled) console.warn("[wechat-share]", "微信分享暂时不可用");
     }).finally(() => window.clearTimeout(timeout));
-    return () => { cancelled = true; controller.abort(); window.clearTimeout(timeout); };
+    return () => { cancelled = true; controller.abort(); window.clearTimeout(timeout); window.removeEventListener("hashchange", updateShare); };
   }, [title, desc, link, imgUrl]);
   return null;
 }

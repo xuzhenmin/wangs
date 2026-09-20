@@ -9,6 +9,10 @@ const eslintConfig = defineConfig([
   globalIgnores([
     // Default ignores of eslint-config-next:
     ".next/**",
+    // Local runtimes and isolated production/test builds are generated files.
+    ".runtime/**",
+    // HLS MPEG-TS media are binary video segments, not TypeScript source.
+    "data/video-imports/**",
     "out/**",
     "build/**",
     "next-env.d.ts",

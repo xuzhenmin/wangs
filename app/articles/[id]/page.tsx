@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getPublishedArticle } from "../../../lib/articles";
 import ArticleAccessGate from "./ArticleAccessGate";
+import ArticleVideoShareAccess from "./ArticleVideoShareAccess";
 import WechatShare from "../../WechatShare";
 import BackToTop from "../../BackToTop";
 import { articleShareData } from "../../../lib/share-metadata";
@@ -58,6 +59,7 @@ export default async function ArticlePage({ params }: ArticlePageProps) {
         {article.summary && <p className="published-summary">{article.summary}</p>}
         <div className="published-meta"><span>深巷内容编辑部</span></div>
         <div className="published-divider" />
+        <ArticleVideoShareAccess key={`video-access-${article.id}`} articleId={article.id} />
         <ArticleAccessGate key={article.id} articleId={article.id} />
       </article>
       <footer className="published-footer"><Link className="brand small" href="/">深<span>巷</span></Link></footer>

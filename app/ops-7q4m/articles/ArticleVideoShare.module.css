@@ -1,0 +1,23 @@
+.cell { min-width:155px; }
+.cellActions { display:flex; flex-wrap:wrap; gap:8px; }
+.cellActions button { border:1px solid #525866; border-radius:5px; padding:7px 9px; background:#252b36; color:#efcf90; font-size:12px; cursor:pointer; }
+.unavailable { color:#8f98a8; font-size:12px; }
+.dialog { margin:auto; width:min(640px,calc(100% - 28px)); max-height:calc(100dvh - 40px); padding:24px; overflow:auto; border:1px solid #454d5d; border-radius:12px; background:#181d27; color:#e9edf4; box-shadow:0 20px 90px #0008; }
+.dialog::backdrop { background:rgb(0 0 0 / 65%); }
+.header { display:flex; justify-content:space-between; gap:16px; align-items:flex-start; }
+.header h2 { margin:0; font-size:21px; }
+.header p { margin:8px 0 0; color:#abb4c5; line-height:1.6; overflow-wrap:anywhere; }
+.close { flex-shrink:0; font-size:24px; }
+.dialog button { padding:9px 12px; border:1px solid #697284; border-radius:6px; background:#262f3e; color:#f2d292; cursor:pointer; }
+.dialog button:disabled { opacity:.45; cursor:not-allowed; }
+.dialog button:focus-visible,.dialog input:focus-visible,.cellActions button:focus-visible { outline:2px solid #f2d292; outline-offset:3px; }
+.description,.status { font-size:13px; line-height:1.8; color:#b9c1cf; }
+.fields { display:grid; gap:18px; margin:20px 0; }
+.field { display:grid; gap:8px; font-size:14px; }
+.field input { width:100%; box-sizing:border-box; border:1px solid #596477; border-radius:6px; padding:11px; background:#0d121b; color:#f0f3f8; font-size:13px; }
+.actions { display:flex; flex-wrap:wrap; gap:10px; margin-top:12px; }
+.destructive { border-top:1px solid #394354; padding-top:18px; margin-top:22px; }
+.error { padding:12px; border-radius:6px; background:#372023; color:#ffb3b3; line-height:1.7; font-size:13px; }
+.notice { padding:12px; border-radius:6px; background:#243023; color:#c4e2bc; line-height:1.7; font-size:13px; }
+.revoked { padding:14px; border:1px solid #806038; border-radius:6px; color:#e8c991; line-height:1.7; }
+@media(max-width:520px) { .dialog { padding:18px; }.actions button { flex:1 1 auto; } }

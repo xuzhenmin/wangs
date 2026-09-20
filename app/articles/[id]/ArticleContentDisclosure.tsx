@@ -1,11 +1,15 @@
 "use client";
 
-import { useLayoutEffect, useRef } from "react";
+import { useLayoutEffect, useMemo, useRef } from "react";
 import PrivateVideoEmbeds from "../../PrivateVideoEmbeds";
 
 export default function ArticleContentDisclosure({ content, collapsed }: { content: string; collapsed: boolean }) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
+  // React 19 compares this prop by object identity before assigning innerHTML.
+  // Keep it stable while location/disclosure state changes, otherwise React
+  // removes the DOM hosts that PrivateVideoEmbeds owns via portals.
+  const html = useMemo(() => ({ __html: content }), [content]);
 
   useLayoutEffect(() => {
     const viewport = viewportRef.current;
@@ -65,7 +69,7 @@ export default function ArticleContentDisclosure({ content, collapsed }: { conte
       data-collapsed={collapsed}
       style={collapsed ? { maxHeight: 0 } : undefined}
     >
-      <div ref={contentRef} className="published-content" dangerouslySetInnerHTML={{ __html: content }} />
+      <div ref={contentRef} className="published-content" dangerouslySetInnerHTML={html} />
       <PrivateVideoEmbeds containerRef={contentRef} content={content} />
     </div>
   );

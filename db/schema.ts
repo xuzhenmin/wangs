@@ -1,4 +1,4 @@
-import { index, integer, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { index, integer, primaryKey, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 export const consentedLocations = sqliteTable("consented_locations", {
   id: text("id").primaryKey(),
@@ -118,3 +118,30 @@ export const privateVideoRateLimits = sqliteTable("private_video_rate_limits", {
   attempts: integer("attempts").notNull(),
   resetsAt: integer("resets_at").notNull(),
 }, table => [index("private_video_rate_limits_expiry_idx").on(table.resetsAt)]);
+
+export const articleVideoShares = sqliteTable("article_video_shares", {
+  articleId: text("article_id").primaryKey(),
+  generation: text("generation").notNull(),
+  codeHash: text("code_hash").notNull().unique(),
+  wrappedCode: text("wrapped_code").notNull(),
+  createdAt: integer("created_at").notNull(),
+  revokedAt: integer("revoked_at"),
+});
+
+export const articleVideoViewerSessions = sqliteTable("article_video_viewer_sessions", {
+  tokenHash: text("token_hash").primaryKey(),
+  createdAt: integer("created_at").notNull(),
+  expiresAt: integer("expires_at").notNull(),
+}, table => [index("article_video_viewer_sessions_expiry_idx").on(table.expiresAt)]);
+
+export const articleVideoViewerGrants = sqliteTable("article_video_viewer_grants", {
+  sessionHash: text("session_hash").notNull(),
+  articleId: text("article_id").notNull(),
+  generation: text("generation").notNull(),
+  createdAt: integer("created_at").notNull(),
+  expiresAt: integer("expires_at").notNull(),
+}, table => [
+  primaryKey({ columns: [table.sessionHash, table.articleId] }),
+  index("article_video_viewer_grants_article_idx").on(table.articleId),
+  index("article_video_viewer_grants_expiry_idx").on(table.expiresAt),
+]);

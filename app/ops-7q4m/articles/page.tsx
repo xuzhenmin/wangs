@@ -5,6 +5,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { ArticleListResult } from "../../../lib/article-management";
 import ArticleVisitors from "./ArticleVisitors";
 import ArticleAccessSettings from "./ArticleAccessSettings";
+import ArticleVideoShare from "./ArticleVideoShare";
+import shareStyles from "./ArticleVideoShare.module.css";
 
 function formatTime(value: number | null) {
   if (value === null) return "暂无访问";
@@ -29,9 +31,10 @@ export default function ArticleManagementPage() {
   const [loading, setLoading] = useState(true);
   const [visitorArticle, setVisitorArticle] = useState<{ id: string; title: string } | null>(null);
   const [accessArticle, setAccessArticle] = useState<{ id: string; title: string } | null>(null);
+  const [shareArticle, setShareArticle] = useState<{ id: string; title: string; copyOnLoad: boolean } | null>(null);
   const [notice, setNotice] = useState("");
   const requestRef = useRef<AbortController | null>(null);
-  const visitorsUnauthorized = useCallback(() => { setVisitorArticle(null); setAccessArticle(null); setData(null); setAuth("required"); }, []);
+  const visitorsUnauthorized = useCallback(() => { setVisitorArticle(null); setAccessArticle(null); setShareArticle(null); setData(null); setAuth("required"); }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -73,6 +76,7 @@ export default function ArticleManagementPage() {
 
   async function logout() {
     requestRef.current?.abort();
+    setShareArticle(null);
     try {
       const response = await fetch("/api/admin/logout", { method: "POST" });
       if (!response.ok) throw new Error("logout-failed");
@@ -139,7 +143,7 @@ export default function ArticleManagementPage() {
           </form>
           <div className="records-table-wrap" aria-busy={loading}>
             <table className="records-table article-management-table">
-              <thead><tr><th scope="col">文章标题</th><th scope="col">状态</th><th scope="col">创建时间</th><th scope="col">修改时间</th><th scope="col">访问次数（PV）</th><th scope="col">独立访客（UV）</th><th scope="col">访问额度</th><th scope="col">最近访问</th><th scope="col">操作</th></tr></thead>
+              <thead><tr><th scope="col">文章标题</th><th scope="col">状态</th><th scope="col">创建时间</th><th scope="col">修改时间</th><th scope="col">访问次数（PV）</th><th scope="col">独立访客（UV）</th><th scope="col">访问额度</th><th scope="col">最近访问</th><th scope="col">视频分享</th><th scope="col">操作</th></tr></thead>
               <tbody>{data?.articles.map(article => <tr key={article.id}>
                 <td className="article-list-title"><b>{article.title}</b><small>{article.id}</small></td>
                 <td><span className={article.status === "published" ? "record-active" : "article-draft-tag"}>{article.status === "published" ? "已发布" : "草稿"}</span></td>
@@ -147,6 +151,10 @@ export default function ArticleManagementPage() {
                 <td className="article-view-count">{article.viewCount.toLocaleString("zh-CN")}</td><td>{article.visitorCount.toLocaleString("zh-CN")}</td>
                 <td className="article-access-cell"><span className={article.access.restricted ? "article-access-locked" : "record-active"}>{article.access.restricted ? "访问受限" : "可访问"}</span><small>剩余 UV {article.access.remainingUv ?? "不限"} · PV {article.access.remainingPv ?? "不限"}</small></td>
                 <td>{formatTime(article.lastViewedAt)}</td>
+                <td className={shareStyles.cell}>{article.status !== "published" ? <span className={shareStyles.unavailable}>发布后可用</span> : article.hasPrivateVideos ? <div className={shareStyles.cellActions}>
+                  <button type="button" aria-label={`查看《${article.title}》的视频访问码`} onClick={() => setShareArticle({ id: article.id, title: article.title, copyOnLoad: false })}>查看访问码</button>
+                  <button type="button" aria-label={`复制《${article.title}》的视频分享链接`} onClick={() => setShareArticle({ id: article.id, title: article.title, copyOnLoad: true })}>复制分享链接</button>
+                </div> : <span className={shareStyles.unavailable}>无需访问码</span>}</td>
                 <td><div className="article-list-actions"><button type="button" aria-label={`管理《${article.title}》访问额度`} onClick={() => { setNotice(""); setAccessArticle({ id: article.id, title: article.title }); }}>{article.access.restricted ? "解除限制" : "访问量管理"}</button><button type="button" aria-label={`查看《${article.title}》访问明细`} onClick={() => setVisitorArticle({ id: article.id, title: article.title })}>访问明细</button><Link href={`/ops-7q4m/editor?id=${encodeURIComponent(article.id)}`}>编辑</Link>{article.status === "published" && <a href={`/articles/${article.id}`} target="_blank" rel="noopener noreferrer">查看文章 ↗</a>}</div></td>
               </tr>)}</tbody>
             </table>
@@ -161,6 +169,7 @@ export default function ArticleManagementPage() {
       </section>
       {visitorArticle && <ArticleVisitors key={visitorArticle.id} articleId={visitorArticle.id} title={visitorArticle.title} onClose={() => setVisitorArticle(null)} onUnauthorized={visitorsUnauthorized} />}
       {accessArticle && <ArticleAccessSettings key={accessArticle.id} articleId={accessArticle.id} title={accessArticle.title} onClose={() => setAccessArticle(null)} onUnauthorized={visitorsUnauthorized} onSaved={() => { setAccessArticle(null); setNotice("访问额度已保存，立即生效。"); setRevision(value => value + 1); }} />}
+      {shareArticle && <ArticleVideoShare key={shareArticle.id} articleId={shareArticle.id} title={shareArticle.title} copyOnLoad={shareArticle.copyOnLoad} onClose={() => setShareArticle(null)} onUnauthorized={visitorsUnauthorized} />}
     </main>
   );
 }

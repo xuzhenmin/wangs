@@ -6,8 +6,9 @@ import { signPrivateVideoSegment } from "./oss-private-videos";
 export function privateVideoHeaders(contentType = "application/json") {
   return new Headers({ "Content-Type": contentType, "Cache-Control": "private, no-store, max-age=0", "Pragma": "no-cache", "X-Content-Type-Options": "nosniff", "Cross-Origin-Resource-Policy": "same-origin", "Referrer-Policy": "no-referrer", "Vary": "Cookie" });
 }
-export function privateVideoJSON(value: unknown, status = 200, cookie?: string) {
-  const headers = privateVideoHeaders(); if (cookie) headers.set("Set-Cookie", cookie);
+export function privateVideoJSON(value: unknown, status = 200, cookie?: string | string[]) {
+  const headers = privateVideoHeaders();
+  for (const value of Array.isArray(cookie) ? cookie : cookie ? [cookie] : []) headers.append("Set-Cookie", value);
   return new Response(JSON.stringify(value), { status, headers });
 }
 export function privateVideoFailure(error: unknown) {
@@ -39,7 +40,7 @@ export async function requirePrivateVideoAdmin(request: Request, mutation = fals
 }
 export async function privateVideoPlayback(request: Request, id: string, resource: "manifest" | "key" | "segment", index?: string, admin = false) {
   try {
-    if (admin) await requirePrivateVideoAdmin(request); else requirePrivateVideoAccess(request);
+    if (admin) await requirePrivateVideoAdmin(request); else requirePrivateVideoAccess(request, id);
     const asset = getPrivateVideoAsset(id); if (!asset) throw new PrivateVideoError("视频不存在或尚未上传完成。", 404);
     const parsed = validatePrivateVideoManifest(asset.manifest);
     const base = `${admin ? "/api/admin/private-videos" : "/api/private-videos"}/${id}`;

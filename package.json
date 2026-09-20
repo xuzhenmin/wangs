@@ -18,8 +18,8 @@
     "test:videos": "node --test tests/video-imports.test.mjs tests/video-imports-aes.test.mjs tests/video-imports-queue.test.mjs tests/video-oss.test.mjs tests/article-video-editor.test.mjs",
     "test:videos:ffmpeg": "node --test tests/video-imports-ffmpeg.test.mjs",
     "test:videos:runtime": "node --test tests/video-imports-runtime.test.mjs tests/article-videos-runtime.test.mjs",
-    "test:private-videos": "node --test tests/private-video-core.test.mjs tests/private-video-sync.test.mjs tests/private-video-setup.test.mjs tests/private-video-package.test.mjs tests/private-video-ui.test.mjs tests/video-oss.test.mjs tests/article-video-editor.test.mjs",
-    "test:private-videos:runtime": "node --test tests/private-video-runtime.test.mjs",
+    "test:private-videos": "node --test tests/private-video-core.test.mjs tests/private-video-sync.test.mjs tests/private-video-setup.test.mjs tests/private-video-package.test.mjs tests/private-video-ui.test.mjs tests/private-video-disclosure.test.mjs tests/video-oss.test.mjs tests/article-video-editor.test.mjs tests/article-video-share-core.test.mjs tests/article-video-share-ui.test.mjs tests/article-video-share-admin.test.mjs",
+    "test:private-videos:runtime": "node --test tests/private-video-runtime.test.mjs tests/article-video-share-runtime.test.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate"
   },
