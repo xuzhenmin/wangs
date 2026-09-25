@@ -1,6 +1,6 @@
 import { open } from 'node:fs/promises';
 import { Readable } from 'node:stream';
-import { videoFile } from '../../../../../../lib/video-imports.mjs';
+import { getVideoJob, videoFile } from '../../../../../../lib/video-imports.mjs';
 import { videoAdmin, videoFailure, videoJSON } from '../../../../../../lib/video-import-http';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -13,7 +13,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     const handle = await open(file, 'r');
     const size = (await handle.stat()).size;
     const headers = new Headers({ 'Content-Type': 'video/mp4', 'Cache-Control': 'private, no-store', 'Accept-Ranges': 'bytes', 'X-Content-Type-Options': 'nosniff', 'Cross-Origin-Resource-Policy': 'same-origin' });
-    if (new URL(request.url).searchParams.get('download') === '1') headers.set('Content-Disposition', `attachment; filename="video-${id}.mp4"`);
+    if (new URL(request.url).searchParams.get('download') === '1') headers.set('Content-Disposition', `attachment; filename="video-${id}${getVideoJob(id)?.incomplete ? '-incomplete' : ''}.mp4"`);
     let start = 0, end = size - 1; const range = request.headers.get('range');
     if (range) {
       const match = /^bytes=(\d*)-(\d*)$/.exec(range);

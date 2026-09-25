@@ -68,11 +68,24 @@ export default function VideosPage() {
   }
 
   async function uploadVideo(job: VideoJob) {
-    if (!window.confirm('新视频将在上传前加密，OSS 私有目录仅保存加密分片。观看者需输入有效访问码。本地原文件会保留，文章不会自动发布。\n\n请确认你有权保存并向指定观看者提供此视频。是否继续加密上传？')) return;
+    const warning = job.incomplete ? `注意：此视频缺少尾段约 ${job.incomplete.missingSeconds.toFixed(2)} 秒，不是完整原视频。\n\n` : '';
+    if (!window.confirm(warning + '新视频将在上传前加密，OSS 私有目录仅保存加密分片。观看者需输入有效访问码。本地原文件会保留，文章不会自动发布。\n\n请确认你有权保存并向指定观看者提供此视频。是否继续加密上传？')) return;
     const result = await action(`/api/admin/video-imports/${job.id}/oss`, { authorized: true });
     if (result?.job) {
       setJobs(current => current.map(item => item.id === result.job.id ? result.job : item));
       setNotice(result.job.publication?.status === 'uploaded' ? '视频已上传 OSS，可在文章编辑器中插入。' : '已开始上传 OSS，可以留在此页查看进度。上传不会自动发布文章。');
+    }
+  }
+
+  async function handleTail(job: VideoJob, operation: 'merge' | 'discard') {
+    const message = operation === 'merge'
+      ? `确认忽略最后一个视频分片并合成？\n\n预计缺少尾段 ${job.tailRecovery!.missingSeconds.toFixed(2)} 秒，合成后约 ${job.tailRecovery!.keptDuration.toFixed(2)} 秒。结果不是完整原视频，将明确标记“缺少尾段”。只使用保留的本地分片，不重新下载。`
+      : '确认丢弃此任务保留的分片？此操作无法恢复，之后需要重新下载。';
+    if (!window.confirm(message)) return;
+    const result = await action(`/api/admin/video-imports/${job.id}/tail`, { action: operation, confirmed: true });
+    if (result?.job) {
+      setJobs(current => current.map(item => item.id === job.id ? result.job : item));
+      setNotice(operation === 'merge' ? '已加入合成队列；完成后可预览、下载或手动上传 OSS。' : '已丢弃此任务的保留分片，释放本地空间。');
     }
   }
 
@@ -149,16 +162,22 @@ export default function VideosPage() {
       <section className={styles.card}><h2>保存任务</h2><p>单任务最多 1 GiB / 2 小时视频，运行限时 30 分钟；逐个处理。支持无加密及标准 AES-128（identity）点播；不支持 DRM、SAMPLE-AES、直播及字节范围清单。</p>
         {!jobs.length && <p>暂无任务。保存完成后可预览、下载文件，或手动上传 OSS 供文章使用。</p>}
         <div className={styles.jobs}>{jobs.map(job => <article key={job.id} className={styles.job}>
-          <div className={styles.row}><h3>{job.title || '未命名视频'}</h3><strong>{names[job.status]}</strong></div>
+          <div className={styles.row}><h3>{job.title || '未命名视频'}</h3><strong>{job.status === 'completed' && job.incomplete ? '成功（缺少尾段）' : job.status === 'failed' && job.tailRecovery ? '尾段失败 · 待确认' : names[job.status]}</strong></div>
           <small>{job.sourceHost} · {new Date(job.createdAt).toLocaleString('zh-CN')}</small>
           <p>{job.downloaded} / {job.total || '待识别'} 个分片 · {megabytes(job.bytes)}{job.duration ? ` · ${Math.round(job.duration)} 秒` : ''}</p>
           {job.status === 'downloading' && <progress aria-label="已保存分片" value={job.downloaded} max={Math.max(1, job.total)} />}
           {job.error && <p className={styles.error}>{job.error}</p>}{job.notice && <p>{job.notice}</p>}
+          {job.incomplete && <p className={styles.hint}>此视频缺少最后 {job.incomplete.missingSegments} 个分片，约 {job.incomplete.missingSeconds.toFixed(2)} 秒；不是完整原视频。</p>}
+          {job.status === 'failed' && job.tailRecovery && <p>已保留 {job.tailRecovery.downloaded} 个分片。忽略尾段后预计保留 {job.tailRecovery.keptDuration.toFixed(2)} 秒，缺少约 {job.tailRecovery.missingSeconds.toFixed(2)} 秒。可确认合成，或丢弃分片释放空间。</p>}
           <div className={styles.actions}>
-            {active(job) && <button disabled={busy} onClick={async () => { await action(`/api/admin/video-imports/${job.id}/cancel`); await load().catch(() => {}); }}>取消任务</button>}
+            {job.status === 'failed' && job.tailRecovery && <>
+              <button disabled={busy || !tools?.ready} onClick={() => void handleTail(job, 'merge')}>忽略失败尾段并合成</button>
+              <button disabled={busy} onClick={() => void handleTail(job, 'discard')}>丢弃保留分片</button>
+            </>}
+            {active(job) && <button disabled={busy} onClick={async () => { await action(`/api/admin/video-imports/${job.id}/cancel`); await load().catch(() => {}); }}>{job.tailRecovery ? '取消合成（保留分片）' : '取消任务'}</button>}
             {job.status === 'completed' && <><button onClick={() => setPreview(preview === job.id ? null : job.id)}>{preview === job.id ? '关闭预览' : '预览视频'}</button><a href={`/api/admin/video-imports/${job.id}/file?download=1`}>下载 MP4（{megabytes(job.fileBytes || 0)}）</a></>}
           </div>
-          {job.status === 'failed' && <p>重试：从原网页重新提交，或在上方填写新的有效地址。已过期的地址不会被自动复用。</p>}
+          {job.status === 'failed' && !job.tailRecovery && <p>重试：从原网页重新提交，或在上方填写新的有效地址。已过期的地址不会被自动复用。</p>}
           {job.savedPath && <p className={styles.path}>保存位置：{job.savedPath}</p>}
           {preview === job.id && <video className={styles.preview} controls playsInline preload="metadata" src={`/api/admin/video-imports/${job.id}/file`} />}
           {job.status === 'completed' && <section className={styles.publication} aria-label="OSS 上传">

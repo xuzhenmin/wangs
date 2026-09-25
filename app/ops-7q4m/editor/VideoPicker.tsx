@@ -64,7 +64,8 @@ export function VideoPicker({ onClose, onInsert, articleVideoBaseUrl }: {
   }, [load]);
 
   async function upload(job: VideoJob) {
-    if (!window.confirm(`将“${job.title || "未命名视频"}”加密后上传至本站 OSS 私有目录，观看者需输入有效访问码。请确认有权保存和向指定观看者提供此视频。上传不会自动保存或发布文章，本地原文件保留。是否继续？`)) return;
+    const warning = job.incomplete ? `注意：此视频缺少尾段约 ${job.incomplete.missingSeconds.toFixed(2)} 秒，不是完整原视频。\n\n` : "";
+    if (!window.confirm(warning + `将“${job.title || "未命名视频"}”加密后上传至本站 OSS 私有目录，观看者需输入有效访问码。请确认有权保存和向指定观看者提供此视频。上传不会自动保存或发布文章，本地原文件保留。是否继续？`)) return;
     const controller = requestScope.current;
     if (!controller || controller.signal.aborted) return;
     setUploading(job.id); setError(""); setNotice("");
@@ -113,6 +114,7 @@ export function VideoPicker({ onClose, onInsert, articleVideoBaseUrl }: {
       return <article className={styles.job} key={job.id}>
         <div className={styles.row}><h3>{job.title || "未命名视频"}</h3><span className={styles.status}>{privateSource ? "已加密上传" : published ? "已上传（公开）" : transferring ? `处理中 ${progress}%` : publication?.status === "failed" ? "上传失败" : "仅本地保存"}</span></div>
         <small className={styles.meta}>{(Number(job.fileBytes || job.bytes || 0) / 1024 / 1024).toFixed(1)} MiB{job.duration ? ` · ${Math.round(job.duration)} 秒` : ""}</small>
+        {job.incomplete && <p className={styles.notice}>缺少尾段约 {job.incomplete.missingSeconds.toFixed(2)} 秒，不是完整原视频。</p>}
         {transferring && <progress className={styles.progress} aria-label={`${job.title || "视频"}的 OSS 上传进度`} max={100} value={progress} />}
         {publication?.error && <p className={styles.error}>{publication.error}</p>}
         {published && !validSource && <p className={styles.error}>此已上传视频与本站当前配置不匹配，暂不能插入。旧资源不会被覆盖；请恢复原配置，或在视频处理页重新导入为新视频。</p>}
@@ -121,12 +123,12 @@ export function VideoPicker({ onClose, onInsert, articleVideoBaseUrl }: {
           {!published && <button type="button" disabled={!library?.oss.ready || transferring || uploading !== null || authRequired} onClick={() => void upload(job)}>{uploading === job.id ? "正在提交…" : transferring ? "正在处理…" : publication?.status === "failed" ? "重试加密上传" : "加密上传至 OSS"}</button>}
           <button type="button" className={styles.primary} disabled={!validSource || authRequired} onClick={() => {
             if (privateSource && publication && isPrivateVideoId(publication.assetId)) {
-              const insertError = onInsert({ assetId: publication.assetId, title: job.title || "私密视频" });
+              const insertError = onInsert({ assetId: publication.assetId, title: `${job.title || "私密视频"}${job.incomplete ? "（缺少尾段）" : ""}` });
               if (insertError) setError(insertError); else onClose();
               return;
             }
             if (!publication?.url || !isArticleVideoUrl(publication.url, base)) return;
-            const insertError = onInsert({ src: publication.url, title: job.title || "视频" });
+            const insertError = onInsert({ src: publication.url, title: `${job.title || "视频"}${job.incomplete ? "（缺少尾段）" : ""}` });
             if (insertError) setError(insertError); else onClose();
           }}>插入正文</button>
           {validSource && !privateSource && <button type="button" onClick={async () => {

@@ -7,7 +7,7 @@ import path from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { downloadVideo } from '../lib/video-download.mjs';
+import { downloadVideo, recoverVideoTail, VideoError, VideoTailError } from '../lib/video-download.mjs';
 
 const execute = promisify(execFile);
 function toolPath(name) {
@@ -103,6 +103,24 @@ test('real FFmpeg imports locally generated AES-128 HLS with explicit and sequen
       assert.ok(Math.abs(Number(metadata.format.duration) - 2) < 0.15);
       // Decode every frame and audio packet, not just the container header.
       await execute(ffmpeg, ['-nostdin', '-hide_banner', '-loglevel', 'error', '-xerror', '-protocol_whitelist', 'file', '-i', mp4, '-f', 'null', '-'], toolOptions);
+
+      // The same encrypted synthetic source, with only its final segment broken.
+      // Recovery uses retained plaintext locally; it never refetches the key or source.
+      const partial = path.join(directory, 'tail-output'); await mkdir(partial);
+      await assert.rejects(downloadVideo(`https://fixture.example/list.m3u8?token=${token}`, partial, {
+        signal: AbortSignal.timeout(30000), progress() {},
+        fetcher: async (value, options) => {
+          const filename = new URL(value).pathname.slice(1);
+          if (filename === 'segment-8.ts') throw new VideoError('网络连接失败（ECONNRESET）。');
+          assert.ok(sourceFiles.has(filename));
+          const bytes = filename === 'list.m3u8' ? Buffer.from(playlist) : Buffer.from(await readFile(path.join(source, filename)));
+          options.onBytes(bytes.length); return { bytes, url: value };
+        },
+      }), error => error instanceof VideoTailError && error.recovery.missingSeconds === 1);
+      const restored = await recoverVideoTail(partial, { signal: AbortSignal.timeout(30000), progress() {} });
+      assert.ok(Math.abs(restored.duration - 1) < 0.15);
+      assert.equal(restored.incomplete.missingSegments, 1); assert.equal(restored.incomplete.missingSeconds, 1);
+      await execute(ffmpeg, ['-nostdin', '-hide_banner', '-loglevel', 'error', '-xerror', '-protocol_whitelist', 'file', '-i', path.join(partial, 'output.partial.mp4'), '-f', 'null', '-'], toolOptions);
     });
   }
 });

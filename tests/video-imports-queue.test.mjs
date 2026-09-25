@@ -6,7 +6,7 @@ import path from 'node:path';
 import http from 'node:http';
 import { EventEmitter } from 'node:events';
 import { Readable } from 'node:stream';
-import { createPairing, validPairing, consumePairing, createVideoJobs, getVideoJob, cancelVideoJob, videoFile, validateBatch } from '../lib/video-imports.mjs';
+import { createPairing, validPairing, consumePairing, createVideoJobs, getVideoJob, cancelVideoJob, videoFile, validateBatch, confirmVideoTail, discardVideoTail } from '../lib/video-imports.mjs';
 
 test('persistent queue: one-at-a-time, cancellation, success, fallback and secret-free records', async t => {
   const directory = await mkdtemp(path.join(tmpdir(), 'video-queue-'));
@@ -28,7 +28,7 @@ test('persistent queue: one-at-a-time, cancellation, success, fallback and secre
     const timer = setTimeout(() => {
       concurrent--;
       const ts = Buffer.alloc(376); ts[0] = 0x47; ts[188] = 0x47;
-      const body = url.pathname.endsWith('.m3u8') ? Buffer.from('#EXTM3U\n#EXT-X-TARGETDURATION:2\n#EXTINF:2,\nsegment.ts\n#EXT-X-ENDLIST') : ts;
+      const body = url.pathname.endsWith('.m3u8') ? Buffer.from(`#EXTM3U\n#EXT-X-TARGETDURATION:2\n#EXTINF:2,\nsegment.ts\n${url.pathname.includes('tail') ? '#EXTINF:2,\nmissing-tail.ts\n' : ''}#EXT-X-ENDLIST`) : ts;
       const response = Readable.from([body]); response.statusCode = url.pathname.includes('missing') ? 404 : 200; response.headers = {}; callback(response);
     }, 25);
     request.destroy = () => { clearTimeout(timer); };
@@ -68,4 +68,37 @@ test('persistent queue: one-at-a-time, cancellation, success, fallback and secre
   await new Promise(resolve => setTimeout(resolve, 100));
   assert.equal(getVideoJob(running.id).status, 'cancelled'); assert.equal(videoFile(running.id), null);
   assert.ok(!(await readdir(path.join(process.env.VIDEO_IMPORT_DIR, running.id))).includes('work'));
+
+  async function waitDone(id) {
+    for (let i = 0; i < 200 && ['queued', 'checking', 'downloading', 'muxing', 'verifying'].includes(getVideoJob(id).status); i++) await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise(resolve => setTimeout(resolve, 25));
+    return getVideoJob(id);
+  }
+  const [tail] = await createVideoJobs(validateBatch({ authorized: true, videos: [{ url: 'http://8.8.8.8/tail.m3u8?auth_key=SECRET', backupUrl: 'http://8.8.8.8/never-used.m3u8' }] }));
+  await waitDone(tail.id);
+  assert.equal(tail.status, 'failed'); assert.equal(tail.tailRecovery.missingSeconds, 2);
+  assert.equal(videoFile(tail.id), null); assert.ok(!requests.includes('/never-used.m3u8'));
+  assert.ok((await readdir(path.join(process.env.VIDEO_IMPORT_DIR, tail.id))).includes('work'));
+  const priorRequests = requests.length;
+  confirmVideoTail(tail.id);
+  assert.throws(() => confirmVideoTail(tail.id), /没有可合成|仍在处理/);
+  await waitDone(tail.id);
+  assert.equal(tail.status, 'completed', tail.error); assert.equal(tail.incomplete.missingSegments, 1);
+  assert.equal(tail.incomplete.missingSeconds, 2); assert.equal(tail.tailRecovery, undefined);
+  assert.equal(requests.length, priorRequests, 'manual tail recovery never reuses expired source URLs');
+  assert.equal(await readFile(videoFile(tail.id), 'utf8'), 'fixture-only-mp4');
+  assert.ok(!(await readdir(path.join(process.env.VIDEO_IMPORT_DIR, tail.id))).includes('work'));
+
+  const [discard] = await createVideoJobs(validateBatch({ authorized: true, videos: [{ url: 'http://8.8.8.8/tail-discard.m3u8' }] }));
+  await waitDone(discard.id); await discardVideoTail(discard.id);
+  assert.equal(discard.tailRecovery, undefined); assert.equal(videoFile(discard.id), null);
+  assert.ok(!(await readdir(path.join(process.env.VIDEO_IMPORT_DIR, discard.id))).includes('work'));
+  assert.throws(() => confirmVideoTail(discard.id), /没有可合成/);
+  const [cancelTail] = await createVideoJobs(validateBatch({ authorized: true, videos: [{ url: 'http://8.8.8.8/tail-cancel.m3u8' }] }));
+  await waitDone(cancelTail.id);
+  confirmVideoTail(cancelTail.id); cancelVideoJob(cancelTail.id);
+  await waitDone(cancelTail.id);
+  assert.equal(cancelTail.status, 'failed'); assert.ok(cancelTail.tailRecovery);
+  assert.ok((await readdir(path.join(process.env.VIDEO_IMPORT_DIR, cancelTail.id, 'work'))).includes('tail-recovery.json'));
+  await discardVideoTail(cancelTail.id);
 });
